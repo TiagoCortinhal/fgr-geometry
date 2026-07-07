@@ -1,0 +1,12 @@
+numpy
+scipy
+pandas
+scikit-learn
+matplotlib
+
+# Optional. Used only by fgrgeom/topology.py, inside functions, with fallbacks.
+# diptest: Hartigan dip test (primary path; a hand-rolled fallback exists but under-detects).
+# ripser: persistent homology (primary). gudhi: secondary PH fallback, not required.
+diptest
+ripser
+# gudhi
