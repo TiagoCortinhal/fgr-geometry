@@ -10,7 +10,8 @@ image_dl_results.json         55916d50-a139-46ef-ac87-c240d12210b0
 fgr_geometry_status.md (v44)  6fee8147-2e55-4c04-9e03-9fd754a3c149
 
 ## 3D interactive latents (store-only, git-ignored)
-latent3d_gbtm_trajectory.html   c8eb75c2-32cd-4234-ac33-2b3435fcd62a   # most distinctive region model
+latent3d_gbtm_trajectory.html     c8eb75c2-32cd-4234-ac33-2b3435fcd62a   # most distinctive region model
+latent3d_multivariate_gbmtm.html   6ca1a729-0b49-4e57-a614-a8d92c72ad0d   # multivariate HC/AC/FL/EFW baseline
 latent3d_joint_vae.html         f1b8a0fa-4257-4645-af28-c79a98ac51fb   # joint biometry+image (unchanged)
 latent3d_biometry_vae.html      f424dc21-458d-4544-8b30-1aa0eea69977   # biometry-only VAE
 gbtm_trajectory_paths_3d.html   d40035e9-a59d-446a-bb90-d1e722d7e88c   # trajectory PATHS over GA
