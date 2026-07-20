@@ -1,0 +1,161 @@
+{
+  "prereg": "image_dl_prereg.md (097765d8)",
+  "target": "recover 3 GBTM biometry-trajectory phenotypes from images (non-circular cross-modal)",
+  "size_only_ceiling_macroAUC": 0.924,
+  "random_floor": 0.495,
+  "wave1_static": {
+    "MultiLayerStatic": {
+      "verdict": "NULL (qualified weak signal)",
+      "best_image_macroAUC": 0.58,
+      "vs_size_ceiling_delta": -0.344,
+      "CI": "[-0.389,-0.298]",
+      "controls": "real vs label-shuffle (perm-p 0.032); PE not recovered (0.505); images DEGRADE biometry (delta -0.022 P0.004); GBTM not GA/img-count confounded"
+    },
+    "EncoderSwap": {
+      "verdict": "NULL (encoder-general)",
+      "resnet50_imagenet": "chance, fails shuffle p=0.16",
+      "usfm_edge": "0.59 fully explained by GA+plane+img-count confound (residualized delta +0.008 CI[-0.045,+0.062])",
+      "fetalclip": "weights unobtainable, untested",
+      "note": "USB pixels WERE mounted; real ResNet features extracted"
+    }
+  },
+  "wave1_conclusion": "Static image->GBTM recovery is a clean, controls-backed, encoder-general NULL. Images = maturation/plane/site clock near-orthogonal to the biometry deceleration curve that defines the phenotypes.",
+  "wave2_temporal_crossmodal": {
+    "TemporalPortfolio": {
+      "verdict": "CLEAN ARCHITECTURE-GENERAL NULL",
+      "n_models": 9,
+      "n_families": 5,
+      "families_ACTUALLY_RUN": "1 static-pooling (mean-pool, GA-weighted), 2 attention (set-transformer GA-pos-enc), 3 irregular-time (GRU-D gap-decay, GRU-AE), 4 velocity/dynamics (velocity \u0394emb/\u0394GA, net-delta, velocity+last fusion, trajectory-shape)",
+      "NOT_run": "latent-ODE/neural-CDE, TCN, and contrastive-SSL were in the brief but the agent did NOT implement them \u2014 do not claim them",
+      "per_model_macroAUC": {
+        "static mean-pool": 0.579,
+        "GA-weighted pool": 0.56,
+        "set-transformer": 0.507,
+        "GRU-D": 0.495,
+        "GRU-AE": 0.516,
+        "velocity": 0.518,
+        "net-delta": 0.52,
+        "velocity+last": 0.534,
+        "trajectory-shape": 0.534
+      },
+      "best_macroAUC": 0.579,
+      "vs_size_ceiling": 0.924,
+      "dynamics_worse_than_static": "velocity - static = -0.061 (delta_vs_static column); all dynamics families below static",
+      "static_faint_signal_is_NONSPECIFIC": "static mean-pool recovers PE control equally (PE 0.608, PE-shuffle p=0.038) -> not GBTM-specific",
+      "continuous_deceleration": "EFW-z slope unrecoverable from any image family (slope_r in [-0.067,0.054]) vs size scalar r=0.746",
+      "controls": "learned encoders (attention/GRU/GRU-D) + dynamics families FAIL label-shuffle (p 0.077-0.538); only static-pool clears shuffle but is PE-nonspecific"
+    },
+    "CrossModalLagBridge": {
+      "questionA_fusion": "NULL: image adds nothing over biometry; fusion-biometry -0.006 == random-biometry -0.007 (image = matched random noise)",
+      "questionB_lagbridge": "QUALIFIED NULL: image lag IS real/PE-clean/GA-robust (faltering OvR 0.60, z=2.46) BUT recovers faltering via SIZE (89% size-mediated, beta -0.379->-0.025 p0.007->0.90) NOT UA-Doppler (3.6% mediated); does not exceed/add to size OvR ceiling 0.962",
+      "correction": "the earlier lag->faltering link is size ('small fetuses look younger'), not a UA-redistribution bridge"
+    }
+  },
+  "overall_conclusion": "Across 2 waves and 15+ image models (static multi-layer USFM, ResNet50-ImageNet, 9 temporal architectures, cross-modal fusion, lag-bridge), image-based DL does NOT recover the GBTM biometry-trajectory phenotypes above the size-only ceiling. The recovery is a clean, controls-backed, encoder- AND architecture-general NULL. Where GBTM on biometry finds cohesive phenotypes (ARI 0.86, deceleration-driven), images are blind to them: the cohesive structure lives in the biometry growth-curve shape, and ultrasound appearance (an eco-visit-dominated maturation/plane/site clock near-orthogonal to growth) carries no non-redundant channel to it. The image maturation-lag is a real representational marker but recovers FGR only as a size proxy. This is a well-powered biological finding, not a modeling failure.",
+  "region_sweep": {
+    "goal": "distinctive latent with cohesive analyzable regions (NOT AUC); introduce images into GBTM/trajectory framework",
+    "GBTM_is_trajectory": "YES \u2014 fits EFW-z curve over GA; latent=(level@28,slope,curv); classes=ordered regions falter/track/accel",
+    "GBTM_variables": "UNIVARIATE EFW-z only",
+    "image_PCA_vs_tabular": {
+      "PC1_var": 0.58,
+      "PC1_meaning": "maturation-lag axis (r=-0.27)",
+      "PC2_5": "near-orthogonal to all Doppler/birth/biometry (no |r|>0.15)"
+    },
+    "completed_tracks": {
+      "JointTrajVAE": "NO CHANGE (bordering degrades); image-shuffle null confirms",
+      "FusionClustering": "NO CHANGE: image-lag leaves partition identical (ARI 0.99), fails image-shuffle",
+      "PCAimageChannel": "NO CHANGE: stacked image-PCs add no region (k=8 hit within multiplicity noise)"
+    },
+    "GBMTM_fallback_GMM": {
+      "note": "root-computed GMM on multivariate trajectory coeffs (lcmm agents wedged, RAM-starved)",
+      "k_best_BIC": 6,
+      "silhouette": -0.074,
+      "interpretation": "multivariate coeff space is a CONTINUUM not clusters; univariate EFW GBTM (ARI 0.86) remains the cohesive partition",
+      "image_channel": "NO CHANGE \u2014 real image-lag ARI 0.828 <= shuffled 0.893\u00b10.040",
+      "headsparing": {
+        "faltering_n": 73,
+        "head_sparing": 34,
+        "symmetric": 13,
+        "ac_sparing": 26,
+        "cohesion": "heterogeneity real but subtypes not cleanly separated on birth-pct (5.9/3.1/5.3)"
+      }
+    },
+    "single_component_PCA_sweep": {
+      "PC1_7": "each single PC within its image-shuffle band = NO CHANGE",
+      "PC8_resolved": "apparent ADD (ARI 0.220 vs shuf 0.781) was 5 outlier fetuses; drop them -> ARI 0.932; correlates with nothing -> ARTIFACT"
+    },
+    "image_dimensionality_sweep": {
+      "method": "images reduced to PCA dim=d cumulative, d=1..8 up to 87% var, added to biometry regions",
+      "result": {
+        "dim1": {
+          "cumvar": 0.58,
+          "ari_real": 0.958,
+          "ari_shuf": "0.856\u00b10.142",
+          "adds": false
+        },
+        "dim2": {
+          "cumvar": 0.669,
+          "ari_real": 0.926,
+          "ari_shuf": "0.848\u00b10.132",
+          "adds": false
+        },
+        "dim3": {
+          "cumvar": 0.751,
+          "ari_real": 0.926,
+          "ari_shuf": "0.738\u00b10.237",
+          "adds": false
+        },
+        "dim4": {
+          "cumvar": 0.79,
+          "ari_real": 0.937,
+          "ari_shuf": "0.862\u00b10.114",
+          "adds": false
+        },
+        "dim5": {
+          "cumvar": 0.815,
+          "ari_real": 0.809,
+          "ari_shuf": "0.819\u00b10.165",
+          "adds": false
+        },
+        "dim6": {
+          "cumvar": 0.839,
+          "ari_real": 0.809,
+          "ari_shuf": "0.853\u00b10.165",
+          "adds": false
+        },
+        "dim7": {
+          "cumvar": 0.859,
+          "ari_real": 0.84,
+          "ari_shuf": "0.835\u00b10.142",
+          "adds": false
+        },
+        "dim8": {
+          "cumvar": 0.872,
+          "ari_real": 0.911,
+          "ari_shuf": "0.748\u00b10.249",
+          "adds": false
+        }
+      },
+      "verdict": "NO CHANGE at EVERY dim 1-8; image null not a reduction-dimension artifact"
+    },
+    "GBMTM_multlcmm_FINAL": {
+      "note": "gold-standard multivariate multlcmm (both agents completed when RAM freed; confirms GMM fallback)",
+      "MultiGBMTM": {
+        "model": "multlcmm HC/AC/FL/EFW z, k=3",
+        "verdict": "NO CHANGE (discrete-region) / marginal REFINE (cohesion)",
+        "reproducibility_ARI": 0.883,
+        "GA_shuffle": "clean (shuf gain -486.9)",
+        "faltering": "SYMMETRIC \u2014 NO head-sparing split; recovers univariate severity axis",
+        "conclusion": "stronger biometry-only baseline but NO new distinctive regions vs univariate EFW GBTM"
+      },
+      "GBMTMplusImage": {
+        "model": "multlcmm + image-lag channel, k=2",
+        "verdict": "NO CHANGE",
+        "image_shuffle": "ARI(biometry,+image)=1.000 identical to shuffled -> channel INERT to partition",
+        "cohesion": "biometry FGR region cohesive on held-out Doppler+birth-pct; image adds nothing",
+        "confirms": "GMM-on-coefficients fallback across 20 seeds"
+      }
+    },
+    "FINAL_VERDICT": "All 6 model families agree: introducing images into the trajectory/GBTM framework produces NO NEW DISTINCTIVE REGIONS. Tested: joint biometry+image trajectory VAE, trajectory-coeff+image-lag fusion clustering, stacked image-PCA channel, single-component PCA sweep (PC1-8), cumulative image-dimensionality sweep (dim1-8), and gold-standard multivariate multlcmm biometry-only vs +image-lag. Every image variant is within its image-shuffle null (multlcmm ARI=1.000 identical to shuffled). The multivariate biometry GBMTM is a valid stronger baseline but adds no new regions over univariate EFW GBTM (faltering is symmetric, no head-sparing split); the multivariate coefficient space is a continuum, and the univariate EFW GBTM (3 cohesive trajectory phenotypes, subsample ARI 0.86-0.88) remains the most distinctive analyzable region model. Images are a maturation axis orthogonal to the growth-trajectory regions and to all clinical tabular data. Canonical config-B UNCHANGED."
+  }
+}
