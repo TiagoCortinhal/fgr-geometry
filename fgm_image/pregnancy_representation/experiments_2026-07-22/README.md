@@ -47,3 +47,19 @@ USF-MAE reconstruction-error atypicality is null for growth; decile trajectory g
 - Latent-architecture sweep (separate): beta-TCVAE beats FA/PCA on GA by only +0.019 (GRU temporal
   pooling, not the loss; TC/KL weights inert); non-GA monotonicity at shuffle floor for every method.
   Transparent FA+varimax is ~98% as GA-organized — nonlinear/contrastive complexity is not worth it.
+
+## lag_trajectory_battery.py — does appearance-lag add to biometry via its TRAJECTORY?
+Motivation: static per-fetus mean lag adds ~nothing over biometry (SGA ΔAUC +0.011, CI crosses 0).
+Legitimate power levers (NOT a construction sweep): (1) trajectory features (lag slope + late-value),
+(2) continuous birth-pct regression (vs dichotomised SGA), (3) two-encoder ensemble (USF-MAE+DINOv2,
+lower measurement error). Fetus-grouped CV, matched size-trajectory baseline, 5000-boot CI, all tests
+reported (no cherry-pick).
+RESULT (lag_trajectory_battery_result.json):
+- A birth-pct regression: biom r=0.550 -> biom+lag-traj r=0.560, Δr=+0.009 CI[-0.010,+0.028] P=0.82
+- B SGA<p10:  biom AUC=0.768 -> +lag-traj 0.784, ΔAUC=+0.016 CI[-0.011,+0.043] P=0.87
+- B LGA>p90:  biom AUC=0.869 -> 0.866, ΔAUC=-0.004 (null)
+- C lag-slope alone: Δr=-0.001 (null)
+VERDICT: even with trajectory framing + continuous outcome + encoder ensemble, the lag increment over
+biometry stays small with CI crossing zero (SGA P=0.87, birth-pct P=0.82 — suggestive, not robust).
+Confirms lag is REPRESENTATIONAL (organizes the latent, survives GA/label-shuffle controls) but NOT a
+robust PREDICTIVE add-on over the biometry a clinician already measures. Honest bounded negative.
