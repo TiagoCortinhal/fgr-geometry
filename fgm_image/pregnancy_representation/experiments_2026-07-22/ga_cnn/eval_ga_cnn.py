@@ -15,11 +15,13 @@ from scipy.ndimage import zoom
 
 DEV="mps" if torch.backends.mps.is_available() else "cpu"
 RES=160
+HERE=os.path.dirname(os.path.abspath(__file__))
+IDX=os.path.join(HERE,"ga_cnn_index.csv"); OUT=os.path.join(HERE,"out")
 tf=T.Compose([T.Grayscale(3),T.Resize((RES,RES)),T.ToTensor(),T.Normalize([0.5]*3,[0.5]*3)])
 
 def load_model():
     m=M.resnet18(weights=None); m.fc=nn.Linear(m.fc.in_features,1)
-    m.load_state_dict(torch.load("handoff/ga_cnn/best.pt",map_location=DEV)); m.to(DEV).eval(); return m
+    m.load_state_dict(torch.load(os.path.join(OUT,"best.pt"),map_location=DEV)); m.to(DEV).eval(); return m
 
 def evaluate(m, df):
     te=df[df.split=="test"]; ps=[]; ys=[]; pl=[]
@@ -32,7 +34,7 @@ def evaluate(m, df):
          "per_plane":{p:{"MAE":float(np.abs(ps[pl==p]-ys[pl==p]).mean()),
                           "r":float(pearsonr(ps[pl==p],ys[pl==p])[0]),"n":int((pl==p).sum())}
                       for p in np.unique(pl)}}
-    json.dump(res,open("handoff/ga_cnn/test_results.json","w"),indent=2); print(json.dumps(res,indent=2))
+    json.dump(res,open(os.path.join(OUT,"test_results.json"),"w"),indent=2); print(json.dumps(res,indent=2))
     return res
 
 def gradcam(m, path, out):
@@ -52,14 +54,14 @@ def gradcam(m, path, out):
     fig.savefig(out,dpi=90,bbox_inches="tight"); plt.close(fig)
 
 def main():
-    df=pd.read_csv("handoff/ga_cnn_index.csv"); m=load_model()
+    df=pd.read_csv(IDX); m=load_model()
     evaluate(m, df)
-    os.makedirs("handoff/ga_cnn/gradcam",exist_ok=True)
+    os.makedirs(os.path.join(OUT,"gradcam"),exist_ok=True)
     # Grad-CAM on a GA-balanced sample of test frames
     te=df[df.split=="test"]; samp=te.groupby(te.ga_weeks_recovered.round(),group_keys=False).apply(lambda g:g.sample(min(len(g),5),random_state=0),include_groups=False)
     samp=te.loc[samp.index] if hasattr(samp,"index") else te.sample(60,random_state=0)
     for _,r in samp.iterrows():
-        gradcam(m, r.path, f"handoff/ga_cnn/gradcam/{os.path.basename(r.path)}")
+        gradcam(m, r.path, os.path.join(OUT,"gradcam",os.path.basename(r.path)))
     print(f"saved {len(samp)} Grad-CAM overlays")
 
 if __name__=="__main__": main()

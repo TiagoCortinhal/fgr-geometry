@@ -14,7 +14,9 @@ from PIL import Image
 import torchvision.transforms as T
 import torchvision.models as M
 
-OUT="handoff/ga_cnn"; os.makedirs(OUT,exist_ok=True)
+HERE=os.path.dirname(os.path.abspath(__file__))
+IDX=os.path.join(HERE,"ga_cnn_index.csv")          # index sits next to this script
+OUT=os.path.join(HERE,"out"); os.makedirs(OUT,exist_ok=True)
 # device: prefer Apple-Silicon GPU (MPS) if reachable, else CPU
 DEV = "mps" if (torch.backends.mps.is_available()) else "cpu"
 if DEV=="cpu": torch.set_num_threads(8)
@@ -39,7 +41,7 @@ def make_model():
     m=M.resnet18(weights=None); m.fc=nn.Linear(m.fc.in_features,1); return m
 
 def run(epochs=30, bs=32, lr=3e-4, benchmark=False):
-    df=pd.read_csv("handoff/ga_cnn_index.csv")
+    df=pd.read_csv(IDX)
     print(f"device={DEV} workers={NWORK} res={RES} | train={sum(df.split=='train')} val={sum(df.split=='val')} test={sum(df.split=='test')}",flush=True)
     pw = NWORK>0
     dl_tr=DataLoader(Frames(df[df.split=="train"],True),bs,shuffle=True,num_workers=NWORK,persistent_workers=pw)
@@ -64,8 +66,8 @@ def run(epochs=30, bs=32, lr=3e-4, benchmark=False):
         mae=np.abs(ps-ys).mean(); r=pearsonr(ps,ys)[0]
         log.append({"ep":ep,"train_loss":tl/len(dl_tr.dataset),"val_mae":float(mae),"val_r":float(r),"sec":time.time()-t0})
         print(f"ep{ep}: train_loss={tl/len(dl_tr.dataset):.3f} val_MAE={mae:.2f}wk val_r={r:.3f} ({time.time()-t0:.0f}s)",flush=True)
-        json.dump(log,open(f"{OUT}/log.json","w"))
-        if mae<best: best=mae; torch.save(m.state_dict(),f"{OUT}/best.pt")
+        json.dump(log,open(os.path.join(OUT,"log.json"),"w"))
+        if mae<best: best=mae; torch.save(m.state_dict(),os.path.join(OUT,"best.pt"))
     print(f"DONE best val MAE={best:.2f}wk",flush=True)
 
 if __name__=="__main__":
