@@ -63,3 +63,12 @@ VERDICT: even with trajectory framing + continuous outcome + encoder ensemble, t
 biometry stays small with CI crossing zero (SGA P=0.87, birth-pct P=0.82 — suggestive, not robust).
 Confirms lag is REPRESENTATIONAL (organizes the latent, survives GA/label-shuffle controls) but NOT a
 robust PREDICTIVE add-on over the biometry a clinician already measures. Honest bounded negative.
+
+## Lag pixel-spacing control (added)
+Q: is the appearance-lag a zoom/spacing artifact (the GA clock reads the whole image)?
+Test (IMPACT frames, DICOM spacing on all 540 substrate fetuses):
+- lag vs pixel spacing: r=-0.013 per-visit, r=-0.057 per-fetus (essentially zero)
+- SGA-AGA lag gap unchanged by regressing spacing out: raw -0.68wk (p=4.5e-4) vs
+  spacing-adjusted -0.68wk (p=3.2e-4)
+VERDICT: lag is NOT a pixel-spacing artifact. All three validated image directions
+(placental/Doppler, maternal-BMI, appearance-lag) survive spacing adjustment.
