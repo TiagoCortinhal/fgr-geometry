@@ -72,3 +72,13 @@ Test (IMPACT frames, DICOM spacing on all 540 substrate fetuses):
   spacing-adjusted -0.68wk (p=3.2e-4)
 VERDICT: lag is NOT a pixel-spacing artifact. All three validated image directions
 (placental/Doppler, maternal-BMI, appearance-lag) survive spacing adjustment.
+
+## Lag spacing: CAUSAL test (train clock with vs without spacing input)
+Stronger than residualising spacing out of the lag output: retrain the GA clock WITH pixel
+spacing (+spacing^2) as an explicit input feature and compare.
+- USF-MAE GA-r: embeddings-only 0.8963 -> +spacing 0.8964 ; DINOv2 0.8988 -> 0.8988 (Δ~0.0001)
+- spacing ALONE predicts GA at r=0.028 (no exploitable spacing->GA pathway)
+- lag with vs without spacing input: r=0.999 ; SGA-AGA gap -0.675 vs -0.683 wk (unchanged)
+VERDICT: the clock cannot use spacing (it carries no GA signal) and the lag is unchanged ->
+lag is NOT a pixel-spacing artifact, confirmed causally. (GA clock = Ridge on frozen embeddings,
+not a trained network — hence the with/without comparison is near-instant.)
