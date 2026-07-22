@@ -82,3 +82,18 @@ spacing (+spacing^2) as an explicit input feature and compare.
 VERDICT: the clock cannot use spacing (it carries no GA signal) and the lag is unchanged ->
 lag is NOT a pixel-spacing artifact, confirmed causally. (GA clock = Ridge on frozen embeddings,
 not a trained network — hence the with/without comparison is near-instant.)
+
+## GA interpretability — WHERE / WHAT / WHICH
+How does the frozen USF-MAE clock infer gestational age from the image?
+- WHERE: project the GA-clock patch-half weights onto the 196 USF-MAE patch tokens -> 14x14
+  per-patch GA-contribution heatmap, tissue-masked (cone), overlaid on scan. Patch-token
+  extraction reproduces the stored pooled embedding EXACTLY (cos=1.0000) with the original
+  transform (ImageNet norm, RGB, concat[CLS, patch.mean]).
+- WHAT: per-plane GA-clock accuracy (fetus-grouped OOF r): cerebral 0.941 > abdominal 0.890 >
+  femur 0.885 -> brain appearance is the strongest maturational clock.
+- WHICH: GA signal is DISTRIBUTED, not localized -- top-10 embedding dims = 3% of weight mass,
+  top-200 = 32%; CLS-half 51% / patch-half 49%. No single "GA neuron".
+Figure: ga_interpretability.png (artifact). Scripts:
+- cerebral_saliency_batch.py: per-frame tissue-masked GA-saliency overlays for all IMPACT
+  cerebral frames (12,237), GA-week folders, resumable daemon. ~9 frames/s CPU.
+Saliency consistently concentrates on skull rim / midline falx / periventricular-thalamic region.
