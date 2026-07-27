@@ -35,8 +35,8 @@ from scipy import stats
 sys.path.insert(0, os.path.dirname(__file__))
 from models import FactMVAE, LongFactMVAE, fact_loss, effective_dim
 
-DATA = "/Users/tiago/PythonProject/fetal_growth_mechanism/data"
-IMG = "/Users/tiago/PythonProject/fgr-geometry/results/img_align"
+DATA = "/Users/tiago/dev/fetal_growth_mechanism/data"
+IMG = "/Users/tiago/dev/fgr-geometry/results/img_align"
 MODES = ["vanilla", "indep", "poe", "adversarial", "contrastive"]
 
 

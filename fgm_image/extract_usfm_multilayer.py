@@ -21,9 +21,9 @@ WS = "/Users/tiago/.claude-science/orgs/2e50fc88-f384-4a2e-9328-c60d613fd12a/wor
 sys.path.insert(0, f"{WS}/USFM-master")
 from usdsgen.modules.backbone.vision_transformer import VisionTransformer
 
-WORK = "/Users/tiago/PythonProject/fgr-geometry/results/img_align/_ml_worklist.csv"
-OUT = "/Users/tiago/PythonProject/fgr-geometry/results/img_align/emb_usfm_multilayer.npz"
-SHARD_DIR = "/Users/tiago/PythonProject/fgr-geometry/results/img_align/_ml_shards"
+WORK = "/Users/tiago/dev/fgr-geometry/results/img_align/_ml_worklist.csv"
+OUT = "/Users/tiago/dev/fgr-geometry/results/img_align/emb_usfm_multilayer.npz"
+SHARD_DIR = "/Users/tiago/dev/fgr-geometry/results/img_align/_ml_shards"
 WEIGHTS = "/Users/tiago/Downloads/USFM_latest.pth"
 LAYERS = [0, 5, 11]
 BATCH = 64; NTHREADS = 10; SHARD_EVERY = 5120

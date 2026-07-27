@@ -1,0 +1,19 @@
+{
+  "causal_spacing_test_train_with_vs_without": {
+    "USF-MAE": {
+      "GA_r_embeddings_only": 0.8963,
+      "GA_r_plus_spacing": 0.8964,
+      "GA_r_spacing_alone": 0.028,
+      "lagA_lagB_corr": 0.9993
+    },
+    "DINOv2": {
+      "GA_r_embeddings_only": 0.8988,
+      "GA_r_plus_spacing": 0.8988,
+      "GA_r_spacing_alone": 0.028,
+      "lagA_lagB_corr": 0.9997
+    },
+    "SGA_AGA_gap_no_spacing_wk": -0.675,
+    "SGA_AGA_gap_with_spacing_wk": -0.683,
+    "verdict": "Adding pixel spacing as an explicit clock input changes GA prediction by 0.0001 and the lag by <0.1% (r=0.999); spacing alone predicts GA at r=0.028 (no exploitable pathway). Lag is NOT spacing-driven \u2014 causal train-with-vs-without confirms the earlier residualization."
+  }
+}

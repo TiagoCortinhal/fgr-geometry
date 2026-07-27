@@ -5,8 +5,8 @@ Reuses the identifier-resolution logic from flatten_dicom.py (discovery + resolv
 """
 import os, re, json, csv, sys
 INPUT_DIR="/Users/tiago/usb/Tiago/imagenes_impact_sin_label"
-JSON_PATH="/Users/tiago/PythonProject/fetal_mc2vae/data/csv/biometric_results_with_brain_labels.json.bak"
-OUT="/Users/tiago/PythonProject/fgr-geometry/results/img_align/impact_image_mapping.csv"
+JSON_PATH="/Users/tiago/dev/fetal_mc2vae/data/csv/biometric_results_with_brain_labels.json.bak"
+OUT="/Users/tiago/dev/fgr-geometry/results/img_align/impact_image_mapping.csv"
 import pydicom
 SKIP_FOLDERS={'.claude','duplicate_examples','flatten_images'}
 

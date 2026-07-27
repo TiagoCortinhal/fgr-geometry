@@ -5,3 +5,16 @@ __pycache__/
 *.pyc
 .DS_Store
 **/.DS_Store
+
+# image feature grids (live on USB / results/, never in git)
+data_images/*
+!data_images/README.md
+patchgrids/
+*.npz
+data_images/
+data_local/
+*.pt
+*.parquet
+*.pth
+out/
+out_probe/

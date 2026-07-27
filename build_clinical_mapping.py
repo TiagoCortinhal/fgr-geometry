@@ -4,8 +4,8 @@ Structure: {nhc}/{study_id}/{timestamp.machine}  and year-range/{nhc_suffix}/{st
 Emits same schema as IMPACT mapping so the two concatenate."""
 import os, re, json, csv
 INPUT_DIR="/Users/tiago/usb/IMPACT_clinical_anon/export_PACS"
-JSON_PATH="/Users/tiago/PythonProject/fetal_mc2vae/data/csv/biometric_results_with_brain_labels.json.bak"
-OUT="/Users/tiago/PythonProject/fgr-geometry/results/img_align/clinical_image_mapping.csv"
+JSON_PATH="/Users/tiago/dev/fetal_mc2vae/data/csv/biometric_results_with_brain_labels.json.bak"
+OUT="/Users/tiago/dev/fgr-geometry/results/img_align/clinical_image_mapping.csv"
 import pydicom
 SKIP_FOLDERS={'.claude','duplicate_examples','flatten_images'}
 SKIP_FILES={'.DS_Store','flatten_mapping.csv','flatten_duplicates.csv','flatten_errors.csv','Seleccion_estudios.xlsx'}

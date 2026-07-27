@@ -15,7 +15,7 @@ PLANES = ("abdominal", "cerebral", "femur")
 VERSIONS = ("raw", "ga_resid", "ga_size_resid")
 OUT = "results/img_align"
 FIGS = os.path.join(OUT, "figs")
-DATA = "/Users/tiago/PythonProject/fgr-geometry/data"
+DATA = "/Users/tiago/dev/fgr-geometry/data"
 
 
 def top_cancorr(X, Y):

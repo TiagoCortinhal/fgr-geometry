@@ -26,7 +26,7 @@ from sklearn.preprocessing import StandardScaler
 
 from .models import BiomGRUVAE, ImgSeqVAE, JointGRUVAE, effective_dim
 
-IMG = "/Users/tiago/PythonProject/fgr-geometry/results/img_align"
+IMG = "/Users/tiago/dev/fgr-geometry/results/img_align"
 
 
 # ---------- training helpers ----------

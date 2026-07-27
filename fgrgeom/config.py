@@ -1,6 +1,6 @@
 from pathlib import Path
 
-DATA = Path("/Users/tiago/PythonProject/fetal_growth_mechanism/data")
+DATA = Path("/Users/tiago/dev/fetal_growth_mechanism/data")
 SEED = 0
 
 # Join keys: visits_long* use fetus_id, impact_* use Cod. Both integer-aligned.

@@ -18,8 +18,8 @@ import numpy as np, pandas as pd, pickle
 from sklearn.preprocessing import StandardScaler
 from sklearn.decomposition import PCA
 
-DATA = "/Users/tiago/PythonProject/fetal_growth_mechanism/data"
-IMG = "/Users/tiago/PythonProject/fgr-geometry/results/img_align"
+DATA = "/Users/tiago/dev/fetal_growth_mechanism/data"
+IMG = "/Users/tiago/dev/fgr-geometry/results/img_align"
 BIOM = ["ac_z_ig21", "hc_z_ig21", "bpd_z_ig21", "fl_z_ig21", "efw_z_ig21"]
 VO = {"20s": 0, "28s": 1, "32s": 2, "eco": 3}
 F, K = 5, 32

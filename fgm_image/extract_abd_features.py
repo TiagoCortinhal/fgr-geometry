@@ -11,8 +11,8 @@ from PIL import Image
 WS="/Users/tiago/.claude-science/orgs/2e50fc88-f384-4a2e-9328-c60d613fd12a/workspaces/50e875d8-edc0-4647-b8d5-b6df7858c9cb"
 sys.path.insert(0,f"{WS}/USFM-master")
 from usdsgen.modules.backbone.vision_transformer import VisionTransformer
-WORK="/Users/tiago/PythonProject/fgr-geometry/results/img_align/_abd_worklist.csv"
-OUT="/Users/tiago/PythonProject/fgr-geometry/results/img_align/_abd_features.npz"
+WORK="/Users/tiago/dev/fgr-geometry/results/img_align/_abd_worklist.csv"
+OUT="/Users/tiago/dev/fgr-geometry/results/img_align/_abd_features.npz"
 W="/Users/tiago/Downloads/USFM_latest.pth"
 IM_MEAN=(0.485,0.456,0.406); IM_STD=(0.229,0.224,0.225); BATCH=64
 torch.set_num_threads(10)

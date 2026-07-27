@@ -49,13 +49,18 @@ def run(epochs=30, bs=32, lr=3e-4, benchmark=False):
     m=make_model().to(DEV); opt=torch.optim.AdamW(m.parameters(),lr,weight_decay=1e-4)
     sched=torch.optim.lr_scheduler.CosineAnnealingLR(opt,epochs)
     lossf=nn.HuberLoss(delta=2.0)
-    best=1e9; log=[]
+    best=1e9; log=[]; nb=len(dl_tr)
+    print(f"starting: {epochs} epochs x {nb} batches/epoch (bs={bs})",flush=True)
     for ep in range(epochs):
         m.train(); t0=time.time(); tl=0
-        for x,y in dl_tr:
+        for bi,(x,y) in enumerate(dl_tr):
             x,y=x.to(DEV),y.to(DEV); opt.zero_grad()
             p=m(x).squeeze(1); l=lossf(p,y); l.backward(); opt.step(); tl+=l.item()*len(x)
             if benchmark: print(f"  [bench] 1 batch {time.time()-t0:.1f}s",flush=True); return time.time()-t0
+            if bi % 20 == 0:
+                el=time.time()-t0; rate=(bi+1)/max(el,1e-6)
+                print(f"  ep{ep} batch {bi}/{nb}  loss={l.item():.2f}  {rate:.1f} batch/s  "
+                      f"eta_epoch={(nb-bi)/rate/60:.1f}min",flush=True)
         sched.step()
         # val
         m.eval(); ps=[]; ys=[]
