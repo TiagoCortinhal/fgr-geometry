@@ -35,7 +35,10 @@ def load():
     nid=z["nid"].astype(str); plane=z["plane"].astype(str); names=z["names"].astype(str)
     # Doppler panel by fetus (Cod == nid)
     e=pd.read_excel(ECHO); e["nid"]=e["Cod"].map(lambda x:str(int(float(x))) if pd.notna(x) else None)
-    dop=e.set_index("nid")[DOPPLER].apply(pd.to_numeric,errors="coerce")
+    dop=e.dropna(subset=["nid"]).copy()
+    for c in DOPPLER: dop[c]=pd.to_numeric(dop[c],errors="coerce")
+    # echo file can have duplicate Cod rows -> collapse to one row/fetus (median) so reindex is unique
+    dop=dop.groupby("nid")[DOPPLER].median()
     return LS,PT,ga,nid,plane,names,dop
 
 def clock_lag(LS,ga,nid):
