@@ -32,7 +32,7 @@ HERE=os.path.dirname(os.path.abspath(__file__))
 ROOT=os.path.abspath(os.path.join(HERE,"..","..",".."))
 # ---- SET THIS to the clinical preprocessed image dir on the HPC (see --check) ----
 CLINICAL_IMG_DIR=os.environ.get("CLINICAL_IMG_DIR",
-    "/mnt/beegfs/groups/collage/IMPACT_CLINICAL_ANON/processed/preprocessed")
+    "/mnt/beegfs/groups/collage/data/IMPACT_CLINICAL/processed/IMPACT_CLINICAL/preprocessed")
 INDEX=os.path.join(HERE,"clinical_index.csv")
 WEIGHTS=os.path.join(ROOT,"FetalCLIP_weights.pt")
 OUT=os.environ.get("GA_OUT_DIR", os.path.join(HERE,"out_usfmae")); os.makedirs(OUT,exist_ok=True)
