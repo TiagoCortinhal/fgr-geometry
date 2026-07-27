@@ -29,10 +29,15 @@ DEV="cuda" if torch.cuda.is_available() else "cpu"
 DOPPLER=["Zscore_UTA","Zscore_AU","Zscore_ACM","Zscore_CPR","Zscore_DV","Zscore_Aortic_Ithsmus"]
 
 # ------------------------------- load + build panels -------------------------------
+WANT_PT = os.environ.get("GA_PROBE_PT","0")=="1"   # attention-pool needs PT (12GB); OFF by default
+
 def load():
-    z=np.load(SUMMARY,allow_pickle=True)
-    LS,PT=z["LS"],z["PT"]; ga=z["ga"].astype(np.float32)
-    nid=z["nid"].astype(str); plane=z["plane"].astype(str); names=z["names"].astype(str)
+    # mmap so we DON'T pull the whole file into RAM; LS is small, PT is 12GB (only touched if WANT_PT)
+    z=np.load(SUMMARY,allow_pickle=True,mmap_mode="r")
+    LS=np.asarray(z["LS"])                       # (N,12,1536) ~1.5GB — fine
+    PT=z["PT"] if WANT_PT else None              # leave memory-mapped / skip
+    ga=np.asarray(z["ga"]).astype(np.float32)
+    nid=np.asarray(z["nid"]).astype(str); plane=np.asarray(z["plane"]).astype(str); names=np.asarray(z["names"]).astype(str)
     # Doppler panel by fetus (Cod == nid)
     e=pd.read_excel(ECHO); e["nid"]=e["Cod"].map(lambda x:str(int(float(x))) if pd.notna(x) else None)
     dop=e.dropna(subset=["nid"]).copy()
@@ -94,14 +99,17 @@ def main():
         D=dop.reindex(sub_nid).values
         okD=~np.isnan(D).any(1)
         entry={"n":int(m.sum())}
-        # AXIS: GA — per layer + attn-pool
+        # AXIS: GA — per layer (LS, small) + optional attn-pool (PT, big)
         entry["GA_per_layer"]={f"L{L+1}":cv_ridge(LS[m][:,L,:],sub_ga,sub_nid) for L in range(12)}
         entry["GA_L12"]=entry["GA_per_layer"]["L12"]
-        entry["GA_attn_pool"]=attn_pool_r(PT[m],sub_ga,sub_nid)
-        entry["GA_flat_mean"]=cv_ridge(PT[m].mean(1),sub_ga,sub_nid)
-        # AXIS: LAG — per layer (does a layer read maturation-lag better?) + attn
+        # AXIS: LAG — per layer
         entry["LAG_per_layer"]={f"L{L+1}":cv_ridge(LS[m][:,L,:],sub_lag,sub_nid) for L in range(12)}
-        entry["LAG_attn_pool"]=attn_pool_r(PT[m],sub_lag,sub_nid)
+        # attention-pool (needs PT ~12GB) — only if requested and loaded
+        if WANT_PT and PT is not None:
+            PTm=np.asarray(PT[m])   # materialize only this plane's slice
+            entry["GA_attn_pool"]=attn_pool_r(PTm,sub_ga,sub_nid)
+            entry["GA_flat_mean"]=cv_ridge(PTm.mean(1),sub_ga,sub_nid)
+            entry["LAG_attn_pool"]=attn_pool_r(PTm,sub_lag,sub_nid); del PTm
         # AXIS: PLACENTAL — image<->Doppler CCA, GA-residualized, per layer
         if okD.sum()>=100:
             def resid(A,g): G=np.column_stack([np.ones_like(g),g,g**2]); return A-G@np.linalg.lstsq(G,A,rcond=None)[0]
@@ -112,9 +120,11 @@ def main():
         # print
         gl=entry["GA_per_layer"]; bestGA=max(gl,key=gl.get)
         print(f"[{pl}] n={entry['n']}",flush=True)
-        print(f"  GA  per-layer best {bestGA} r={gl[bestGA]:.3f} | L12 r={entry['GA_L12']:.3f} | attn-pool r={entry['GA_attn_pool']:.3f} (flat {entry['GA_flat_mean']:.3f})",flush=True)
+        pool=(f" | attn-pool r={entry['GA_attn_pool']:.3f} (flat {entry['GA_flat_mean']:.3f})" if "GA_attn_pool" in entry else "")
+        print(f"  GA  per-layer best {bestGA} r={gl[bestGA]:.3f} | L12 r={entry['GA_L12']:.3f}{pool}",flush=True)
         ll=entry["LAG_per_layer"]; bestL=max(ll,key=ll.get)
-        print(f"  LAG per-layer best {bestL} r={ll[bestL]:.3f} | L12 r={ll['L12']:.3f} | attn-pool r={entry['LAG_attn_pool']:.3f}",flush=True)
+        lpool=(f" | attn-pool r={entry['LAG_attn_pool']:.3f}" if "LAG_attn_pool" in entry else "")
+        print(f"  LAG per-layer best {bestL} r={ll[bestL]:.3f} | L12 r={ll['L12']:.3f}{lpool}",flush=True)
         if "PLAC_per_layer" in entry:
             pp=entry["PLAC_per_layer"]; bestP=max(pp,key=pp.get)
             print(f"  PLAC per-layer best {bestP} cc={pp[bestP]:.3f} | L12 cc={pp['L12']:.3f} (n={entry['PLAC_n']})",flush=True)
