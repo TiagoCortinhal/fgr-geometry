@@ -87,8 +87,13 @@ def attn_pool_r(PT,y,grp):
 
 # ------------------------------- main -------------------------------
 def main():
+    import time; t0=time.time()
+    print(f"[{time.time()-t0:5.0f}s] loading summaries {SUMMARY} (WANT_PT={WANT_PT}) ...",flush=True)
     LS,PT,ga,nid,plane,names,dop=load()
+    print(f"[{time.time()-t0:5.0f}s] loaded LS {LS.shape} | {len(ga)} frames {len(set(nid))} fetuses | Doppler {dop.shape[0]} fetuses",flush=True)
+    print(f"[{time.time()-t0:5.0f}s] fitting layer-12 GA clock for lag ...",flush=True)
     lag=clock_lag(LS,ga,nid)
+    print(f"[{time.time()-t0:5.0f}s] lag done (SD={lag.std():.2f}wk). starting per-plane probes.",flush=True)
     res={}
     for pl in ["all_planes","cerebral","abdominal","femur"]:
         m=np.isfinite(ga)&(ga>=6)&(ga<=42)
@@ -99,11 +104,14 @@ def main():
         D=dop.reindex(sub_nid).values
         okD=~np.isnan(D).any(1)
         entry={"n":int(m.sum())}
+        print(f"[{time.time()-t0:5.0f}s] === {pl} (n={m.sum()}) ===  GA per-layer ...",flush=True)
         # AXIS: GA — per layer (LS, small) + optional attn-pool (PT, big)
         entry["GA_per_layer"]={f"L{L+1}":cv_ridge(LS[m][:,L,:],sub_ga,sub_nid) for L in range(12)}
         entry["GA_L12"]=entry["GA_per_layer"]["L12"]
+        print(f"[{time.time()-t0:5.0f}s]   GA done; LAG per-layer ...",flush=True)
         # AXIS: LAG — per layer
         entry["LAG_per_layer"]={f"L{L+1}":cv_ridge(LS[m][:,L,:],sub_lag,sub_nid) for L in range(12)}
+        print(f"[{time.time()-t0:5.0f}s]   LAG done; PLACENTAL CCA ...",flush=True)
         # attention-pool (needs PT ~12GB) — only if requested and loaded
         if WANT_PT and PT is not None:
             PTm=np.asarray(PT[m])   # materialize only this plane's slice
