@@ -26,9 +26,14 @@ import torchvision.transforms as T
 IMG_DIR = "/mnt/beegfs/groups/collage/data/IMPACT_FULL/processed/IMPACT_FULL/preprocessed"
 WEIGHTS = "USF-MAE_full_pretrain_43dataset_100epochs.pt"        # in repo root
 INDEX   = "fgm_image/pregnancy_representation/experiments_2026-07-22/ga_cnn/ga_cnn_index.csv"
-OUT_DIR = "/mnt/beegfs/groups/collage/data/usfmae_all_layers"   # scratch on beegfs
-SUMMARY = os.path.join(OUT_DIR, "summaries.npz")                # compact file for probes
-SHARD   = 512                                                   # frames/shard (~3.7 GB)
+# /mnt/beegfs/groups/collage is READ-ONLY. Outputs go INSIDE THE REPO (writable, under
+# your home), NOT the group path. Default: <repo>/fgm_image/.../experiments_2026-07-22/out_usfmae/.
+# Override with env GA_OUT_DIR if you want a different writable path.
+_SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))   # .../experiments_2026-07-22
+OUT_DIR = os.environ.get("GA_OUT_DIR", os.path.join(_SCRIPT_DIR, "out_usfmae"))
+SUMMARY = os.path.join(OUT_DIR, "summaries.npz")                # compact file for probes (~5 GB)
+SAVE_SHARDS = os.environ.get("GA_SAVE_SHARDS","0")=="1"         # full 148GB token store OFF by default
+SHARD   = 512                                                   # frames/shard (~3.7 GB, only if SAVE_SHARDS)
 BATCH   = 64                                                    # GPU forward batch
 DEV     = "cuda" if torch.cuda.is_available() else "cpu"
 # ---------------------------------------------------------------------------------------
@@ -72,37 +77,44 @@ def extract():
     os.makedirs(OUT_DIR,exist_ok=True)
     df=build_frame_table(); enc=load_encoder()
     n=len(df); nsh=(n+SHARD-1)//SHARD
-    print(f"EXTRACT {n} frames -> {nsh} shards x {SHARD} | dev={DEV} batch={BATCH}",flush=True)
-    # accumulate compact summaries across shards
-    all_LS=[]; all_PT=[]; all_ga=[]; all_nid=[]; all_pl=[]; all_nm=[]
+    print(f"EXTRACT {n} frames -> {nsh} shards x {SHARD} | dev={DEV} batch={BATCH} "
+          f"| SAVE_SHARDS={SAVE_SHARDS} | out={OUT_DIR}",flush=True)
+    # Compact summaries written PER-SHARD (peak RAM ~1 shard, not the whole set), then
+    # concatenated from the small per-shard files at the end. The giant (12,197,768) token
+    # tensor is reduced to LS+PT on the GPU and freed immediately.
+    sumdir=os.path.join(OUT_DIR,"_summ_parts"); os.makedirs(sumdir,exist_ok=True)
     t0=time.time()
     for si in range(nsh):
+        part=os.path.join(sumdir,f"part_{si:04d}.npz")
+        if os.path.exists(part) and not SAVE_SHARDS: continue      # resume: skip done parts
         sl=df.iloc[si*SHARD:(si+1)*SHARD]
-        outp=os.path.join(OUT_DIR,f"shard_{si:04d}.npz")
-        toks=None
-        if os.path.exists(outp):
-            z=np.load(outp,allow_pickle=True); toks=z["tokens"]
-        else:
-            toks=np.zeros((len(sl),12,197,768),np.float32)
-            for b0 in range(0,len(sl),BATCH):
-                bs=sl.iloc[b0:b0+BATCH]
-                x=torch.stack([tf(Image.open(p).convert("RGB")) for p in bs["img"]]).to(DEV)
-                toks[b0:b0+len(bs)]=enc.all_layers(x).cpu().numpy()
-            np.savez(outp, tokens=toks, names=sl["new_filename"].values,
-                     ga=sl["ga_weeks_recovered"].values, plane=sl["plane_prop"].values,
-                     nid=sl["nid"].astype(str).values, split=sl["split"].values)
-            print(f"  shard {si+1}/{nsh} ({len(sl)} fr) {time.time()-t0:.0f}s "
-                  f"{(si+1)*SHARD/(time.time()-t0):.0f} fr/s",flush=True)
-        # compact summaries
-        all_LS.append(np.concatenate([toks[:,:,0,:],toks[:,:,1:,:].mean(2)],-1).astype(np.float32))
-        all_PT.append(toks[:,-1,1:,:].astype(np.float32))
-        all_ga.append(sl["ga_weeks_recovered"].values); all_nid.append(sl["nid"].astype(str).values)
-        all_pl.append(sl["plane_prop"].values); all_nm.append(sl["new_filename"].values)
-        del toks
-    np.savez(SUMMARY, LS=np.concatenate(all_LS), PT=np.concatenate(all_PT),
-             ga=np.concatenate(all_ga), nid=np.concatenate(all_nid),
-             plane=np.concatenate(all_pl), names=np.concatenate(all_nm))
-    print(f"EXTRACT done {time.time()-t0:.0f}s | summary -> {SUMMARY}",flush=True)
+        ls=np.zeros((len(sl),12,1536),np.float32); pt=np.zeros((len(sl),196,768),np.float32)
+        toks_full = np.zeros((len(sl),12,197,768),np.float32) if SAVE_SHARDS else None
+        for b0 in range(0,len(sl),BATCH):
+            bs=sl.iloc[b0:b0+BATCH]
+            x=torch.stack([tf(Image.open(p).convert("RGB")) for p in bs["img"]]).to(DEV)
+            tk=enc.all_layers(x)                                   # (B,12,197,768) on GPU
+            ls[b0:b0+len(bs)]=torch.cat([tk[:,:,0,:],tk[:,:,1:,:].mean(2)],-1).cpu().numpy()
+            pt[b0:b0+len(bs)]=tk[:,-1,1:,:].cpu().numpy()
+            if SAVE_SHARDS: toks_full[b0:b0+len(bs)]=tk.cpu().numpy()
+        if SAVE_SHARDS:
+            np.savez(os.path.join(OUT_DIR,f"shard_{si:04d}.npz"), tokens=toks_full,
+                     names=sl["new_filename"].values, ga=sl["ga_weeks_recovered"].values,
+                     plane=sl["plane_prop"].values, nid=sl["nid"].astype(str).values); del toks_full
+        np.savez(part, LS=ls, PT=pt, ga=sl["ga_weeks_recovered"].values,
+                 nid=sl["nid"].astype(str).values, plane=sl["plane_prop"].values,
+                 names=sl["new_filename"].values); del ls, pt
+        print(f"  shard {si+1}/{nsh} ({len(sl)} fr) {time.time()-t0:.0f}s "
+              f"{(si+1)*SHARD/(time.time()-t0):.0f} fr/s",flush=True)
+    # concat small parts -> single summary
+    parts=sorted(glob.glob(os.path.join(sumdir,"part_*.npz")))
+    acc={k:[] for k in ["LS","PT","ga","nid","plane","names"]}
+    for p in parts:
+        z=np.load(p,allow_pickle=True)
+        for k in acc: acc[k].append(z[k])
+    np.savez(SUMMARY, **{k:np.concatenate(v) for k,v in acc.items()})
+    print(f"EXTRACT done {time.time()-t0:.0f}s | summary -> {SUMMARY} "
+          f"({os.path.getsize(SUMMARY)/1e9:.1f} GB)",flush=True)
 
 # ----------------------------- STAGE 2: PROBES -----------------------------
 from sklearn.model_selection import GroupKFold
