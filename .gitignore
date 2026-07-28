@@ -22,3 +22,6 @@ out_usfmae_layers/
 out_usfmae/
 **/out_usfmae/
 **/patch_codes_*.npz
+**/vqvae_codes_*.npz
+**/patchcache_*.dat
+**/*_vqvae_*.pt
