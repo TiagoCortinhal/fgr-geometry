@@ -22,41 +22,70 @@ USAGE:
 import os, glob, json, argparse, numpy as np, pandas as pd
 from sklearn.cluster import MiniBatchKMeans
 from scipy.stats import spearmanr
+import torch
+DEV="cuda" if torch.cuda.is_available() else "cpu"
+
+def gpu_kmeans(flat, K, iters=60, bs=100000, seed=0):
+    """Minibatch Lloyd's k-means on GPU for high-dim patches (e.g. 24576-d). Memory-bounded:
+    processes patches in chunks, never materialises the full (N,K) distance matrix at once.
+    Returns (centroids np (K,D), labels np (N,)) plus dead-code reinit each iter."""
+    g=torch.Generator(device="cpu").manual_seed(seed)
+    N,D=flat.shape
+    init=torch.from_numpy(flat[torch.randperm(N,generator=g)[:K].numpy()]).to(DEV).float()
+    C=init.clone()
+    def assign(Xb):                             # (b,) labels for a batch on DEV
+        d=(Xb.pow(2).sum(1,keepdim=True)-2*Xb@C.t()+C.pow(2).sum(1)); return d.argmin(1)
+    for it in range(iters):
+        Csum=torch.zeros(K,D,device=DEV); Ccnt=torch.zeros(K,device=DEV)
+        for i in range(0,N,bs):
+            Xb=torch.from_numpy(flat[i:i+bs]).to(DEV).float(); lab=assign(Xb)
+            Csum.index_add_(0,lab,Xb); Ccnt.index_add_(0,lab,torch.ones(len(Xb),device=DEV))
+        dead=Ccnt<1
+        Cnew=torch.where(dead[:,None],C,Csum/Ccnt.clamp(min=1)[:,None])
+        if dead.any():                          # reseed dead centroids to random patches
+            idx=torch.randint(0,N,(int(dead.sum()),),generator=g)
+            Cnew[dead]=torch.from_numpy(flat[idx.numpy()]).to(DEV).float()
+        shift=(Cnew-C).pow(2).sum(1).mean().item(); C=Cnew
+        if it%10==0: print(f"    kmeans it{it} shift={shift:.4f} used={int((Ccnt>=1).sum())}/{K}",flush=True)
+        if shift<1e-5 and it>5: break
+    lab=np.empty(N,np.int32)
+    for i in range(0,N,bs):
+        lab[i:i+bs]=assign(torch.from_numpy(flat[i:i+bs]).to(DEV).float()).cpu().numpy()
+    return C.cpu().numpy(), lab
 
 HERE=os.path.dirname(os.path.abspath(__file__))
 OUT=os.environ.get("GA_OUT_DIR", os.path.join(HERE,"out_usfmae"))
 OUTP=os.path.join(HERE,"out_probe"); os.makedirs(OUTP,exist_ok=True)
 INDEX=os.path.join(HERE,"ga_cnn","ga_cnn_index.csv")   # IMPACT index has plane_prop + GA
 
-def load_patch_layer(enc, layer, max_imgs=4000, all_layers=False, pca_dim=256):
-    """stream shards, take patch tokens (drop CLS token 0).
+def load_patch_layer(enc, layer, max_imgs=4000, all_layers=False, pca_dim=None):
+    """stream shards, take patch tokens (drop CLS token 0). NO PCA — raw features.
     layer mode: ONE layer -> (n_img, n_patch, dim).
-    all_layers: concat ALL layers per patch (dim*L) then PCA-reduce to pca_dim (fit on a
-    patch sample) so k-means stays tractable (24*1024=24576-d -> pca_dim). Returns same shape."""
+    all_layers: concat ALL layers per patch -> (n_img, n_patch, L*dim), then PER-LAYER
+    z-score (each layer block standardized) so all layers contribute to distance and the
+    high-norm late layers don't dominate. Raw dimensionality kept (e.g. 24*1024=24576)."""
     d=os.path.join(OUT,f"fulltok_{enc}")
     shards=sorted(glob.glob(os.path.join(d,"shard_*.npz")))
     assert shards, f"no shards at {d}"
-    P=[]; GA=[]; PL=[]; NM=[]; got=0
+    P=[]; GA=[]; PL=[]; NM=[]; got=0; L=None; D=None
     for f in shards:
         z=np.load(f,allow_pickle=True); tok=z["tokens"]        # (n,L,Ntok,dim)
         if all_layers:
-            pt=tok[:,:,1:,:].astype(np.float32)                # (n,L,Npatch,dim)
-            n,L,Np,D=pt.shape
-            pt=pt.transpose(0,2,1,3).reshape(n,Np,L*D)         # (n,Npatch, L*dim)
+            pt=tok[:,:,1:,:].astype(np.float32); n,L,Np,D=pt.shape
+            pt=pt.transpose(0,2,1,3).reshape(n,Np,L*D)         # (n,Npatch, L*dim) RAW
         else:
-            pt=tok[:,layer,1:,:].astype(np.float32)            # (n,Npatch,dim)
+            pt=tok[:,layer,1:,:].astype(np.float32)
         P.append(pt); GA.append(z["ga"]); PL.append(z["plane"]); NM.append(z["names"])
         got+=len(pt); del tok,z
         if got>=max_imgs: break
     P=np.concatenate(P)[:max_imgs]; GA=np.concatenate(GA)[:max_imgs]
     PL=np.concatenate(PL)[:max_imgs]; NM=np.concatenate(NM)[:max_imgs]
-    if all_layers and P.shape[-1]>pca_dim:
-        from sklearn.decomposition import PCA
-        n,Np,D=P.shape; flat=P.reshape(-1,D)
-        samp=flat[np.random.default_rng(0).choice(len(flat),min(200000,len(flat)),replace=False)]
-        pca=PCA(pca_dim,random_state=0).fit(samp)
-        P=pca.transform(flat).reshape(n,Np,pca_dim).astype(np.float32)
-        print(f"  all-layers concat {D}d -> PCA {pca_dim}d (var kept {pca.explained_variance_ratio_.sum():.2f})",flush=True)
+    if all_layers:
+        # per-layer standardize: z-score each layer block over all (img,patch), keep raw dim
+        n,Np,LD=P.shape; flat=P.reshape(n*Np,L,D)              # (n*Np, L, D)
+        mu=flat.mean(0,keepdims=True); sd=flat.std(0,keepdims=True)+1e-6   # (1,L,D)
+        P=((flat-mu)/sd).reshape(n,Np,L*D).astype(np.float32)
+        print(f"  all-layers RAW concat {L*D}d, per-layer z-scored (no PCA)",flush=True)
     return P, GA.astype(np.float32), PL.astype(str), NM.astype(str)
 
 def main():
@@ -66,16 +95,19 @@ def main():
     ap.add_argument("--pca-dim",type=int,default=256)
     ap.add_argument("--K",type=int,default=64); ap.add_argument("--max_imgs",type=int,default=4000)
     a=ap.parse_args()
-    # all-layers concat is ~25MB/img (FetalCLIP 24*1024*256) -> cap images to bound RAM
-    max_imgs=min(a.max_imgs,1200) if a.all_layers else a.max_imgs
+    # RAW all-layers concat = 24*1024*256 patches ~= 25 MB/img in host RAM. Default 1500 imgs
+    # -> ~38 GB loaded (fine on the HPC node). Override --max_imgs if the node has more RAM.
+    # GPU k-means handles the COMPUTE at full 24576-d; the load is the only RAM bound.
+    max_imgs=min(a.max_imgs,1500) if a.all_layers else a.max_imgs
     tag=f"{a.enc}_{'Lall' if a.all_layers else 'L'+str(a.layer)}_K{a.K}"
     P,ga,plane,names=load_patch_layer(a.enc,a.layer,max_imgs,all_layers=a.all_layers,pca_dim=a.pca_dim)
     ni,npatch,dim=P.shape; grid=int(round(npatch**0.5))
     print(f"[{tag}] {ni} imgs x {npatch} patches ({grid}x{grid}) x {dim}d | GA {ga.min():.0f}-{ga.max():.0f}",flush=True)
-    # fit codebook on flattened patches (MiniBatchKMeans = robust, no collapse)
+    # fit codebook on flattened patches — GPU minibatch k-means (raw high-dim, no PCA)
     flat=P.reshape(-1,dim)
-    km=MiniBatchKMeans(a.K,batch_size=4096,n_init=3,max_iter=200,random_state=0).fit(flat)
-    codes=km.predict(flat).reshape(ni,npatch)                  # (n_img, n_patch) code map
+    print(f"  GPU k-means on {flat.shape[0]} patches x {dim}d, K={a.K}, dev={DEV}",flush=True)
+    centroids,labels=gpu_kmeans(flat,a.K)
+    codes=labels.reshape(ni,npatch)                            # (n_img, n_patch) code map
     used=len(set(codes.ravel())); print(f"  codes used {used}/{a.K}",flush=True)
     # 1) spatial grounding: for each code, mean grid position + positional concentration
     pos=np.arange(npatch); rows=pos//grid; cols=pos%grid
@@ -130,7 +162,7 @@ def main():
     except Exception as ex: print("  fig skipped:",ex,flush=True)
     # save the code maps for overlay-on-image later
     np.savez(os.path.join(OUT,f"patch_codes_{tag}.npz"),codes=codes.astype(np.int16),
-             names=names,ga=ga,plane=plane,centroids=km.cluster_centers_.astype(np.float32),grid=grid)
+             names=names,ga=ga,plane=plane,centroids=centroids.astype(np.float32),grid=grid)
     print(f"  code maps -> out_usfmae/patch_codes_{tag}.npz  DONE",flush=True)
 
 if __name__=="__main__": main()
