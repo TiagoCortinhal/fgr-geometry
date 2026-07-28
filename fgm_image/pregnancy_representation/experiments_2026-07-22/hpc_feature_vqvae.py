@@ -55,11 +55,19 @@ class ShardFeeder:
         mm.flush(); s.n=ntot
         np.savez(s.cmeta,ga=np.concatenate(GA),plane=np.concatenate(PL),names=np.concatenate(NM),n=ntot,C=s.C,g=g)
         print(f"  fm cache built {time.time()-t0:.0f}s",flush=True)
-    def cached_batches(s,bs,shuffle=True):
+    def cached_batches(s,bs,shuffle=True,block=2048):
+        # read large CONTIGUOUS blocks (fast on beegfs), shuffle WITHIN each block, then split
+        # into batches. Scattered per-batch gathers over a 128GB network memmap were the stall.
         mm=np.load(s.cache,mmap_mode="r"); M=np.load(s.cmeta,allow_pickle=True)
-        ga=M["ga"];pl=M["plane"];nm=M["names"]; idx=np.random.permutation(s.n) if shuffle else np.arange(s.n)
-        for i in range(0,s.n,bs):
-            j=np.sort(idx[i:i+bs]); yield np.asarray(mm[j]).astype(np.float32), ga[j], pl[j], nm[j]
+        ga=M["ga"];pl=M["plane"];nm=M["names"]
+        border=np.random.permutation(range(0,s.n,block)) if shuffle else range(0,s.n,block)
+        for b0 in border:
+            b1=min(b0+block,s.n)
+            buf=np.asarray(mm[b0:b1]).astype(np.float32)        # ONE contiguous read
+            gb,pb,nb=ga[b0:b1],pl[b0:b1],nm[b0:b1]
+            order=np.random.permutation(len(buf)) if shuffle else np.arange(len(buf))
+            for i in range(0,len(buf),bs):
+                k=order[i:i+bs]; yield buf[k], gb[k], pb[k], nb[k]
     def _stats(s):
         # stats only for SELECTED layers, sub-chunked, kept fp16 until the small reduction
         Ls=len(s.sel); n=0; a=np.zeros((Ls,s.D)); b=np.zeros((Ls,s.D)); t0=time.time()
