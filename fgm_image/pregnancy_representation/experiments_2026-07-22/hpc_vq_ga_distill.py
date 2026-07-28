@@ -28,16 +28,35 @@ DEV="cuda" if torch.cuda.is_available() else "cpu"
 
 # ---------------- VQ layer (straight-through + commitment loss) ----------------
 class VectorQuantizer(nn.Module):
-    def __init__(s, K, dim, beta=0.25):
-        super().__init__(); s.K=K; s.dim=dim; s.beta=beta
-        s.codebook=nn.Embedding(K,dim); s.codebook.weight.data.uniform_(-1/K,1/K)
+    """EMA-updated codebook (van den Oord 2017) with dead-code reinitialisation — the two
+    standard cures for codebook collapse. Codebook is a BUFFER updated by EMA, NOT by the
+    optimiser; only a commitment loss flows to the encoder."""
+    def __init__(s, K, dim, beta=0.25, decay=0.99, eps=1e-5, reinit_thresh=1.0):
+        super().__init__(); s.K=K; s.dim=dim; s.beta=beta; s.decay=decay; s.eps=eps; s.reinit_thresh=reinit_thresh
+        emb=torch.randn(K,dim)
+        s.register_buffer("codebook",emb)
+        s.register_buffer("cluster_size",torch.zeros(K))
+        s.register_buffer("ema_w",emb.clone())
     def forward(s, z):                      # z: (B,dim)
-        d=(z.pow(2).sum(1,keepdim=True) - 2*z@s.codebook.weight.t()
-           + s.codebook.weight.pow(2).sum(1))          # (B,K) sq dist
-        idx=d.argmin(1)                                 # (B,)
-        zq=s.codebook(idx)                              # (B,dim)
-        loss=s.beta*((zq.detach()-z)**2).mean() + ((zq-z.detach())**2).mean()
-        zq=z + (zq-z).detach()                          # straight-through
+        d=(z.pow(2).sum(1,keepdim=True) - 2*z@s.codebook.t() + s.codebook.pow(2).sum(1))  # (B,K)
+        idx=d.argmin(1); zq=s.codebook[idx]
+        if s.training:
+            with torch.no_grad():
+                oh=torch.zeros(z.shape[0],s.K,device=z.device); oh.scatter_(1,idx[:,None],1)  # (B,K)
+                n=oh.sum(0)                                   # code usage this batch
+                s.cluster_size.mul_(s.decay).add_(n,alpha=1-s.decay)
+                dw=oh.t()@z                                   # (K,dim) sum of assigned z
+                s.ema_w.mul_(s.decay).add_(dw,alpha=1-s.decay)
+                N=s.cluster_size.sum()
+                cs=(s.cluster_size+s.eps)/(N+s.K*s.eps)*N
+                s.codebook.copy_(s.ema_w/cs[:,None])
+                # dead-code reinit: any code used < thresh (EMA) is reseeded to a random batch vector
+                dead=s.cluster_size < s.reinit_thresh
+                if dead.any():
+                    pick=z[torch.randint(0,z.shape[0],(int(dead.sum()),),device=z.device)]
+                    s.codebook[dead]=pick; s.ema_w[dead]=pick; s.cluster_size[dead]=1.0
+        loss=s.beta*((zq.detach()-z)**2).mean()               # commitment only (codebook is EMA)
+        zq=z + (zq-z).detach()                                # straight-through
         return zq, idx, loss
 
 class VQGA(nn.Module):
@@ -52,24 +71,33 @@ class VQGA(nn.Module):
         return ga, idx, vql
 
 def teacher_clock(X,ga,nid):
-    """continuous OOF Ridge GA clock — the distillation target (soft GA read)."""
+    """continuous OOF GA clock — distillation target. PCA-64 + Ridge(a=100) to match the
+    stable clinical clock (raw 2048-d Ridge is ill-conditioned on FetalCLIP features)."""
+    from sklearn.decomposition import PCA
     pred=np.zeros(len(ga))
     for tr,te in GroupKFold(5).split(X,groups=nid):
-        sc=StandardScaler().fit(X[tr]); pred[te]=Ridge(alpha=10).fit(sc.transform(X[tr]),ga[tr]).predict(sc.transform(X[te]))
+        sc=StandardScaler().fit(X[tr]); pca=PCA(64,random_state=0).fit(sc.transform(X[tr]))
+        Xtr=pca.transform(sc.transform(X[tr])); Xte=pca.transform(sc.transform(X[te]))
+        pred[te]=Ridge(alpha=100).fit(Xtr,ga[tr]).predict(Xte)
     return pred
 
-def train_vq(Xtr,ytr_teacher,ytr_true,Xte, d_in, K, code_dim, epochs=200, lr=1e-3, distill_w=0.7):
+def train_vq(Xtr,ytr_teacher,ytr_true,Xte, d_in, K, code_dim, epochs=60, lr=1e-3, distill_w=0.7, bs=256):
+    # codebook is an EMA buffer -> optimise only encoder+head; minibatches so codebook sees
+    # diverse assignments each step (full-batch was a collapse cause).
     m=VQGA(d_in,code_dim,K).to(DEV)
-    opt=torch.optim.Adam(m.parameters(),lr)
+    params=[p for n,p in m.named_parameters() if not n.startswith("vq.")]
+    opt=torch.optim.Adam(params,lr)
     Xtr_t=torch.tensor(Xtr,dtype=torch.float32,device=DEV)
     yT=torch.tensor(ytr_teacher,dtype=torch.float32,device=DEV)
     yG=torch.tensor(ytr_true,dtype=torch.float32,device=DEV)
+    n=len(Xtr_t)
     for ep in range(epochs):
-        m.train(); opt.zero_grad()
-        ga,idx,vql=m(Xtr_t)
-        # distill teacher's soft read + anchor to true GA + codebook commitment
-        loss=distill_w*((ga-yT)**2).mean() + (1-distill_w)*((ga-yG)**2).mean() + vql
-        loss.backward(); opt.step()
+        m.train(); perm=torch.randperm(n,device=DEV)
+        for i in range(0,n,bs):
+            b=perm[i:i+bs]; opt.zero_grad()
+            ga,idx,vql=m(Xtr_t[b])
+            loss=distill_w*((ga-yT[b])**2).mean() + (1-distill_w)*((ga-yG[b])**2).mean() + vql
+            loss.backward(); opt.step()
     m.eval()
     with torch.no_grad():
         gate,idxe,_=m(torch.tensor(Xte,dtype=torch.float32,device=DEV))
