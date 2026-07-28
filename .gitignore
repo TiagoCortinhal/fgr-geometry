@@ -21,3 +21,4 @@ out_probe/
 out_usfmae_layers/
 out_usfmae/
 **/out_usfmae/
+**/patch_codes_*.npz
