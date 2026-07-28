@@ -22,14 +22,38 @@ DEV="cuda" if torch.cuda.is_available() else "cpu"
 
 # ---------------- data: stream shards -> (B,C,16,16) feature maps ----------------
 class ShardFeeder:
-    """iterate feature-map batches from shards. per-layer z-score computed once (streaming)."""
+    """iterate feature-map batches. Builds a ONE-TIME uncompressed memmap of z-scored feature
+    maps (B,C,g,g) on beegfs so epochs read fast (no per-epoch shard decompression). Reused if
+    present; --rebuild to redo."""
     def __init__(s, enc, all_layers, layer):
         s.fs=sorted(glob.glob(os.path.join(OUT,f"fulltok_{enc}","shard_*.npz"))); assert s.fs
         z0=np.load(s.fs[0],allow_pickle=True); _,s.L,s.T,s.D=z0["tokens"].shape; del z0
         s.all=all_layers; s.layer=layer; s.grid=int(round((s.T-1)**0.5))
         s.C=(s.L*s.D) if all_layers else s.D
         s.mu=s.sd=None
+        s.cache=os.path.join(OUT,f"fmcache_{enc}_{'Lall' if all_layers else 'L'+str(layer)}.dat")
+        s.cmeta=s.cache.replace(".dat",".meta.npz")
         if all_layers: s._stats()
+    def build_memmap(s, rebuild=False):
+        if (not rebuild) and os.path.exists(s.cache) and os.path.exists(s.cmeta):
+            M=np.load(s.cmeta,allow_pickle=True); s.n=int(M["n"]); print(f"  reuse fm cache {s.cache} ({s.n} imgs)",flush=True); return
+        ntot=sum(np.load(f,allow_pickle=True)["ga"].shape[0] for f in s.fs); g=s.grid
+        print(f"  building fm memmap: {ntot} imgs x {s.C} x {g}x{g} fp16 = {ntot*s.C*g*g*2/1e9:.0f} GB",flush=True)
+        mm=np.lib.format.open_memmap(s.cache,mode="w+",dtype=np.float16,shape=(ntot,s.C,g,g))
+        GA=[];PL=[];NM=[];row=0;t0=time.time()
+        for i,f in enumerate(s.fs):
+            z=np.load(f,allow_pickle=True); fm=s._map(z["tokens"])       # (n,C,g,g) z-scored
+            mm[row:row+len(fm)]=fm.astype(np.float16); row+=len(fm)
+            GA.append(z["ga"]);PL.append(z["plane"]);NM.append(z["names"]); del z,fm
+            if i%15==0: print(f"    cache shard {i+1}/{len(s.fs)} {time.time()-t0:.0f}s",flush=True)
+        mm.flush(); s.n=ntot
+        np.savez(s.cmeta,ga=np.concatenate(GA),plane=np.concatenate(PL),names=np.concatenate(NM),n=ntot,C=s.C,g=g)
+        print(f"  fm cache built {time.time()-t0:.0f}s",flush=True)
+    def cached_batches(s,bs,shuffle=True):
+        mm=np.load(s.cache,mmap_mode="r"); M=np.load(s.cmeta,allow_pickle=True)
+        ga=M["ga"];pl=M["plane"];nm=M["names"]; idx=np.random.permutation(s.n) if shuffle else np.arange(s.n)
+        for i in range(0,s.n,bs):
+            j=np.sort(idx[i:i+bs]); yield np.asarray(mm[j]).astype(np.float32), ga[j], pl[j], nm[j]
     def _stats(s):
         n=0; a=None; b=None; t0=time.time()
         for i,f in enumerate(s.fs):
@@ -95,17 +119,19 @@ def main():
     ap.add_argument("--all-layers",action="store_true"); ap.add_argument("--last-layer",action="store_true")
     ap.add_argument("--K",type=int,default=256); ap.add_argument("--zdim",type=int,default=64)
     ap.add_argument("--epochs",type=int,default=15); ap.add_argument("--bs",type=int,default=32); ap.add_argument("--lr",type=float,default=2e-3)
+    ap.add_argument("--rebuild",action="store_true",help="rebuild the fm memmap cache")
     a=ap.parse_args()
     all_layers=a.all_layers and not a.last_layer
     tag=f"{a.enc}_{'Lall' if all_layers else 'L'+str(a.layer)}_vqvae_K{a.K}"
     fd=ShardFeeder(a.enc,all_layers,a.layer)
     print(f"[{tag}] feature-map C={fd.C} grid {fd.grid}x{fd.grid} | K={a.K} zdim={a.zdim} dev={DEV}",flush=True)
+    fd.build_memmap(rebuild=a.rebuild)     # one-time decompress+z-score -> fast memmap
     m=VQVAE(fd.C,a.zdim,a.K).to(DEV)
     opt=torch.optim.Adam([p for n,p in m.named_parameters() if not n.startswith("vq.")],a.lr)
     t0=time.time()
     for ep in range(a.epochs):
         m.train(); tot=0; rec=0; nb=0
-        for fm,_,_,_ in fd.batches(a.bs):
+        for fm,_,_,_ in fd.cached_batches(a.bs):
             x=torch.from_numpy(fm).to(DEV).float(); opt.zero_grad()
             xr,idx,vql=m(x); rl=F.mse_loss(xr,x); (rl+vql).backward(); opt.step()
             rec+=rl.item(); tot+=len(x); nb+=1
@@ -113,7 +139,7 @@ def main():
     # assign pass -> code grids + meta + recon error
     m.eval(); codes=[]; GA=[]; PL=[]; NM=[]; rerr=[]
     with torch.no_grad():
-        for fm,ga,pl,nm in fd.batches(a.bs,shuffle=False):
+        for fm,ga,pl,nm in fd.cached_batches(a.bs,shuffle=False):
             x=torch.from_numpy(fm).to(DEV).float(); xr,idx,_=m(x)
             codes.append(idx.cpu().numpy().astype(np.int16)); rerr.append(((xr-x)**2).mean((1,2,3)).cpu().numpy())
             GA.append(ga); PL.append(pl); NM.append(nm)
