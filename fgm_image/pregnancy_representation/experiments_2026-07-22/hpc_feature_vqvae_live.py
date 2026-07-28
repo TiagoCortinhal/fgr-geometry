@@ -92,7 +92,7 @@ def main():
     a=ap.parse_args()
     df=frame_table(); vt=build_fetalclip()
     # infer dims + selected layers from one batch
-    nblk=len(vt.transformer.resblocks); sel=sorted(set(np.linspace(1,nblk,min(a.n_layers,nblk)).round().astype(int)))
+    nblk=len(vt.transformer.resblocks); sel=sorted(set(int(x) for x in np.linspace(1,nblk,min(a.n_layers,nblk)).round().astype(int)))
     x0=load_batch(df["img"].iloc[:2]).to(DEV); m0=clip_layer_maps(vt,x0,set(sel))
     Ls,Np,D=m0.shape[1],m0.shape[2],m0.shape[3]; g=int(round(Np**0.5)); C=Ls*D
     tag=f"FetalCLIP_live_L{Ls}of{nblk}_vqvae_K{a.K}"
@@ -140,10 +140,12 @@ def main():
     code_ga={int(c):float(spearmanr(freq[:,c],ga)[0]) for c in range(a.K) if freq[:,c].std()>1e-6}
     strong=sorted(code_ga.items(),key=lambda kv:-abs(kv[1]))[:8]
     print("  top GA-shifting codes:",[(c,round(r,2)) for c,r in strong],flush=True)
-    json.dump({"tag":tag,"n_img":int(ni),"grid":int(g),"K":a.K,"codes_used":used,"recon_mse":float(rerr.mean()),
-               "layers":sel,"code_pos":code_pos,"code_ga_spearman":code_ga},open(os.path.join(OUTP,f"{tag}.json"),"w"),indent=2)
+    # SAVE THE IRREPLACEABLE OUTPUTS FIRST (model + code maps) so a downstream error can't lose them
     np.savez(os.path.join(OUT,f"vqvae_codes_{tag}.npz"),codes=codes,names=names,ga=ga,plane=plane,codebook=net.vq.cb.cpu().numpy(),grid=g)
     torch.save(net.state_dict(),os.path.join(OUT,f"{tag}.pt"))
+    print(f"  saved model + code maps",flush=True)
+    json.dump({"tag":str(tag),"n_img":int(ni),"grid":int(g),"K":int(a.K),"codes_used":int(used),"recon_mse":float(rerr.mean()),
+               "layers":[int(x) for x in sel],"code_pos":code_pos,"code_ga_spearman":code_ga},open(os.path.join(OUTP,f"{tag}.json"),"w"),indent=2)
     try:
         import matplotlib; matplotlib.use("Agg"); import matplotlib.pyplot as plt
         fig,ax=plt.subplots(1,2,figsize=(13,5)); cs=list(code_pos.values())
