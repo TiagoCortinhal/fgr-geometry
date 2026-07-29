@@ -132,41 +132,77 @@ def rerandomise(model,seed=0):
     return model
 
 @torch.no_grad()
-def tokens_for(df,arm,seed=0,enc="FetalCLIP",fit_rows=0):
-    """patch tokens at L18, per-FRAME mean subtracted then per-dim standardised.
+def stream_tokens(df,arm,enc="FetalCLIP",seed=0):
+    """GENERATOR over batches of (n_rows, D) fp16 CPU tokens at L18, per-frame-mean removed.
 
-    MEMORY. All 5.2M patch rows x 1024-d is 21.4 GB in float32, and torch.cat plus a
-    standardisation copy pushed the peak to 43-64 GB -- fatal. Fixes: accumulate in FLOAT16
-    (10.7 GB), standardise IN PLACE (no copy), and optionally keep only a random subsample of rows
-    for FITTING (fit_rows). A 4x-overcomplete M=4096 dictionary does not need 5.2M rows: 1M rows is
-    244 per dictionary element. ASSIGNMENT still runs over all frames in chunks, so the per-frame
-    profiles remain full-cohort."""
+    MEMORY HISTORY -- two OOMs before this design, both mine:
+      attempt 1: held all 5.2M rows x 1024 in float32 = 21.4 GB, and torch.cat plus a copy-based
+                 standardisation took the peak to 43-64 GB.
+      attempt 2: fp16 halved the STORED size to 10.7 GB but left both doublings intact --
+                 torch.cat(feats) allocates a second full copy while the list is still alive, and
+                 X.float().mean(0) materialises a 21 GB float32 temporary just to compute a mean.
+                 Died at ~43 GB peak.
+    THIS design never holds the full set: tokens are yielded batch by batch and the caller keeps only
+    what it needs. Fitting keeps a 1M-row random subsample (2.0 GB fp16); profiles are computed in a
+    SECOND streaming pass after fitting, pooling each batch to per-frame immediately and discarding
+    the tokens. Peak is the fit subsample plus one batch. Cost: two passes per arm (~18 min not 9)."""
     m,tf,_=BUILDERS[enc]()
     if arm=="random": m=rerandomise(m,seed=seed)
-    feats=[]; t0=time.time()
+    t0=time.time()
     for b0 in range(0,len(df),BATCH):
         bs=df.iloc[b0:b0+BATCH]
-        x=torch.stack([tf(Image.open(p).convert("RGB")) for p in bs["img"]]).to(DEV)
-        t=patch_tokens(enc,m,x)[:,LAYER]                      # (B,Np,D)
-        if arm=="shuffled":                                   # 8b: permute patches WITHIN frame
+        x=torch.stack([tf(Image.open(p_).convert("RGB")) for p_ in bs["img"]]).to(DEV)
+        t=patch_tokens(enc,m,x)[:,LAYER]                       # (B,Np,D)
+        if arm=="shuffled":                                    # 8b: permute patches WITHIN frame
             idx=torch.argsort(torch.rand(t.shape[0],t.shape[1],device=t.device),dim=1)
             t=torch.gather(t,1,idx.unsqueeze(-1).expand_as(t))
-        t=t-t.mean(1,keepdim=True)                            # per-frame token mean (drift term)
-        feats.append(t.reshape(-1,t.shape[-1]).half().cpu())      # fp16: 21.4GB -> 10.7GB
-        if (b0//BATCH)%50==0:
-            print(f"    {arm} tokens {b0}/{len(df)} {time.time()-t0:.0f}s "
-                  f"({sum(f.numel() for f in feats)*2/1e9:.1f}GB held)",flush=True)
+        t=t-t.mean(1,keepdim=True)                             # per-frame token mean (drift term)
+        yield b0,len(bs),t.shape[1],t.reshape(-1,t.shape[-1]).half().cpu()
+        if (b0//BATCH)%50==0: print(f"    {arm} {b0}/{len(df)} {time.time()-t0:.0f}s",flush=True)
     del m; torch.cuda.empty_cache() if DEV=="cuda" else None
-    X=torch.cat(feats); feats.clear()
-    mu=X.float().mean(0); sd=X.float().std(0)+1e-6
-    X.sub_(mu.half()).div_(sd.half())                             # IN PLACE, no copy
-    return X
 
-def fit_sae(X,seed,epochs=EPOCHS,bs=8192,lr=3e-4,fit_rows=FIT_ROWS):
-    """X may be fp16 on CPU; batches are cast to float32 on device. Fits on at most fit_rows."""
-    if fit_rows and X.shape[0]>fit_rows:
-        idx=torch.randperm(X.shape[0],generator=torch.Generator().manual_seed(0))[:fit_rows]
-        X=X[idx]
+def fit_subsample(df,arm,fit_rows=None,seed=0):
+    """collect a RANDOM subsample of patch rows for fitting, plus streaming mean/std.
+    Statistics are accumulated as running sums in float64 -- never a full-size float32 copy."""
+    fit_rows=fit_rows or FIT_ROWS
+    rng=np.random.default_rng(seed); keep=[]; kept=0; seen=0
+    ssum=None; ssq=None; npatch=None
+    for b0,nb,npa,X in stream_tokens(df,arm,seed=seed):
+        npatch=npa
+        f=X.float()
+        ssum=f.sum(0).double() if ssum is None else ssum+f.sum(0).double()
+        ssq=(f*f).sum(0).double() if ssq is None else ssq+(f*f).sum(0).double()
+        seen+=X.shape[0]
+        # reservoir-style: take a fixed fraction of every batch so the subsample spans the cohort
+        take=max(1,int(round(X.shape[0]*fit_rows/ (len(df)*npa))))
+        sel=rng.choice(X.shape[0],min(take,X.shape[0]),replace=False)
+        keep.append(X[sel]); kept+=len(sel)
+        del X,f
+    mu=(ssum/seen).float(); sd=(ssq/seen-(ssum/seen)**2).clamp_min(1e-12).sqrt().float()
+    Xf=torch.cat(keep); keep.clear()
+    Xf.sub_(mu.half()).div_((sd+1e-6).half())
+    print(f"  {arm}: fit subsample {tuple(Xf.shape)} = {Xf.numel()*2/1e9:.1f}GB "
+          f"({Xf.shape[0]/M:.0f} rows per dictionary element); stats from all {seen:,} rows",flush=True)
+    return Xf,mu,sd,npatch
+
+@torch.no_grad()
+def stream_profiles(df,arm,sae,mu,sd,npatch,seed=0):
+    """SECOND pass: per-frame max/mean-pooled feature profiles + spatial-entropy accumulator.
+    Tokens are pooled and discarded per batch, so nothing full-size is ever held."""
+    mx=np.zeros((len(df),M),np.float32); mn=np.zeros((len(df),M),np.float32)
+    pos=torch.zeros(npatch,M,device=DEV); nfr=0
+    for b0,nb,npa,X in stream_tokens(df,arm,seed=seed):
+        xb=((X.float()-mu)/(sd+1e-6)).to(DEV)
+        a,_=sae.encode(xb)
+        A=a.reshape(nb,npa,M)
+        mx[b0:b0+nb]=A.max(1).values.cpu().numpy(); mn[b0:b0+nb]=A.mean(1).cpu().numpy()
+        pos+=A.sum(0); nfr+=nb
+        del X,xb,a,A
+    pos=(pos/max(nfr,1)).cpu().numpy(); pos=pos/(pos.sum(0,keepdims=True)+1e-9)
+    return mx,mn,-(pos*np.log(pos+1e-12)).sum(0)
+
+def fit_sae(X,seed,epochs=EPOCHS,bs=8192,lr=3e-4):
+    """X is the already-subsampled fp16 CPU tensor from fit_subsample(); batches cast on device."""
     sae=TopKSAE(X.shape[1],seed=seed).to(DEV)
     opt=torch.optim.Adam(sae.parameters(),lr=lr)
     n=X.shape[0]; g=torch.Generator().manual_seed(seed)
@@ -320,34 +356,26 @@ def main():
         print(f"saved out_probe/sae_clock_{a.arm}.json\nDONE",flush=True); return
 
     # ---- fit one arm, 3 seeds ----
-    X=tokens_for(df,a.arm)
-    npatch=X.shape[0]//len(df)
-    print(f"  {a.arm}: tokens {tuple(X.shape)} ({npatch} patches/frame)",flush=True)
-    saves={}; alive=[]; sp_ent=[]
-    for s in range(SEEDS):
-        sae=fit_sae(X,seed=s)
-        mx,mn=frame_profiles(sae,X,len(df),npatch)
-        saves[f"prof_max_s{s}"]=mx.astype(np.float32); saves[f"prof_mean_s{s}"]=mn.astype(np.float32)
+    Xf,mu,sd,npatch=fit_subsample(df,a.arm)
+    saves={}; alive=[]; sp_ent=None
+    for sN in range(SEEDS):
+        sae=fit_sae(Xf,seed=sN)
         alive.append(float((sae.fires>0).float().mean()))
-        if s==0:
-            # spatial entropy accumulated in CHUNKS: the full act tensor for 400k rows would be
-            # 6.6 GB on GPU and 6.6 GB again on the host.
-            pos=torch.zeros(npatch,M,device=DEV); nfr=0
-            with torch.no_grad():
-                for c in range(0,min(len(X),400_000),npatch*64):
-                    xb=X[c:c+npatch*64].to(DEV).float()
-                    if xb.shape[0]<npatch: break
-                    act,_=sae.encode(xb)
-                    pos+=act.reshape(-1,npatch,M).sum(0); nfr+=act.shape[0]//npatch
-            pos=(pos/max(nfr,1)).cpu().numpy()
-            pos=pos/ (pos.sum(0,keepdims=True)+1e-9)
-            sp_ent=-(pos*np.log(pos+1e-12)).sum(0)         # entropy over spatial position per feature
-            saves["W_dec"]=sae.W_dec.detach().cpu().numpy().astype(np.float32)
+        mx,mn,ent=stream_profiles(df,a.arm,sae,mu,sd,npatch)     # second pass, nothing full-size held
+        saves[f"prof_max_s{sN}"]=mx; saves[f"prof_mean_s{sN}"]=mn
+        if sN==0:
+            sp_ent=ent; saves["W_dec"]=sae.W_dec.detach().cpu().numpy().astype(np.float32)
+        del sae
     np.savez(os.path.join(OUT,f"sae_{a.arm}_M{M}.npz"),alive=np.mean(alive),
              spatial_entropy=np.asarray(sp_ent,dtype=np.float32),
              nid=df["nid"].astype(str).values,plane=df["plane_prop"].values,
              ga=df["ga_weeks_recovered"].values,**saves)
     res["alive_fraction_mean"]=float(np.mean(alive))
+    res["fit_rows"]=int(Xf.shape[0])
+    res["protocol_deviation"]=("fitted on a %d-row random subsample of the 5.2M patch rows, forced by "
+        "two OOMs; the pre-registered protocol said all patches. Statistics come from ALL rows and "
+        "ASSIGNMENT covers every frame, so per-frame profiles are full-cohort. %d rows is %d per "
+        "dictionary element for a 4x-overcomplete M=4096."%(Xf.shape[0],Xf.shape[0],Xf.shape[0]//M))
     print(f"  {a.arm}: alive {np.mean(alive):.3f} -> sae_{a.arm}_M{M}.npz",flush=True)
     json.dump(res,open(os.path.join(OUTP,f"sae_{a.arm}_M{M}.json"),"w"),indent=2,default=str)
     print("DONE",flush=True)
