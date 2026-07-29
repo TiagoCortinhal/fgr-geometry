@@ -173,7 +173,7 @@ def assign_all(enc,K,cohort='impact'):
     src=os.path.join(OUT,f"wp2codes_{enc}_K{K}{tag}.npz")
     assert os.path.exists(src), f"missing {src} -- run hpc_seed_ceiling.py first"
     z=np.load(src,allow_pickle=True); C=torch.tensor(z["centroids"],device=DEV).float()
-    li=int(z["layer_index"]); df=cohort_table(a.cohort); m,tf,_=BUILDERS[enc]()
+    li=int(z["layer_index"]); df=cohort_table(cohort); m,tf,_=BUILDERS[enc]()
     labs=[]; t0=time.time()
     for b0 in range(0,len(df),BATCH):
         bs=df.iloc[b0:b0+BATCH]
