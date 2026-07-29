@@ -46,6 +46,22 @@ ENCS=["FetalCLIP","USF-MAE","USFM","DINOv2"]
 
 from hpc_extract_4encoders import BUILDERS, frame_table   # reuse verified weight loading
 
+def build_randinit():
+    """FROZEN randomly-initialised ViT-B/16 -- the NULL encoder / confound control.
+    A 'shared' visual word that also appears here is NOT anatomical: it is image statistics
+    (speckle, brightness, cone geometry) that any ViT sees. Untrained on purpose; training it
+    jointly with the codes would let it collapse its own features to a near-constant (trivially
+    reconstructible) target, and would also make cross-encoder agreement circular."""
+    import timm
+    m=timm.create_model("vit_base_patch16_224",pretrained=False,num_classes=0).to(DEV).eval()
+    for q in m.parameters(): q.requires_grad_(False)
+    return m, tfm_imagenet(), None
+
+def tfm_imagenet():
+    import torchvision.transforms as T
+    return T.Compose([T.Resize((224,224)),T.ToTensor(),
+                      T.Normalize((0.485,0.456,0.406),(0.229,0.224,0.225))])
+
 # ---- patch-token forwards (the shipped builders return pooled CLS+mean-patch, not the grid) ----
 @torch.no_grad()
 def patch_tokens(name, mdl, x):
@@ -75,6 +91,12 @@ def patch_tokens(name, mdl, x):
     if name=="DINOv2":
         feats=mdl.get_intermediate_layers(x,n=mdl.n_blocks,return_class_token=True)
         return torch.stack([p for p,_ in feats],1)          # registers already excluded
+    if name=="RandInit":
+        h=mdl.patch_embed(x)
+        h=torch.cat([mdl.cls_token.expand(x.shape[0],-1,-1),h],1)+mdl.pos_embed
+        out=[]
+        for b in mdl.blocks: h=b(h); out.append(h[:,1:])
+        return torch.stack(out,1)
     raise KeyError(name)
 
 class Reconciler:
@@ -142,8 +164,13 @@ def main():
     ap.add_argument("--epochs",type=int,default=8); ap.add_argument("--bs",type=int,default=24)
     ap.add_argument("--lr",type=float,default=2e-3); ap.add_argument("--fit-frames",type=int,default=6000)
     ap.add_argument("--check",action="store_true")
+    ap.add_argument("--with-randinit",action="store_true",
+                    help="add a FROZEN random-init ViT as a 5th NULL encoder (confound control)")
     a=ap.parse_args()
-    df=frame_table(); print(f"frames {len(df)}",flush=True)
+    global ENCS
+    if a.with_randinit and "RandInit" not in ENCS:
+        ENCS=ENCS+["RandInit"]; BUILDERS["RandInit"]=build_randinit
+    df=frame_table(); print(f"frames {len(df)} | encoders {ENCS}",flush=True)
     models={}; 
     for e in ENCS:
         m,tf,_=BUILDERS[e](); models[e]=(m,tf); print(f"  loaded {e}",flush=True)
@@ -192,7 +219,7 @@ def main():
             GA.append(sl["ga_weeks_recovered"].values); NM.append(sl["new_filename"].values)
             if i%(a.bs*60)==0: print(f"    assign {i}/{len(df)}",flush=True)
     CS=np.concatenate(CS); CP=np.concatenate(CP); ga=np.concatenate(GA).astype(np.float32); nm=np.concatenate(NM)
-    res={"encoders":ENCS,"shapes":{e:list(shapes[e]) for e in ENCS},"grid":GRID,"common_width":CW,
+    res={"encoders":ENCS,"randinit_control":bool(a.with_randinit),"shapes":{e:list(shapes[e]) for e in ENCS},"grid":GRID,"common_width":CW,
          "K_shared":a.K_shared,"K_private":a.K_private,"n_frames":int(len(ga)),"fit_frames":int(len(fit)),
          "codes_used_shared":int(len(set(CS.ravel()))),
          "codes_used_private":{e:int(len(set(CP[:,k,:].ravel()))) for k,e in enumerate(ENCS)},
