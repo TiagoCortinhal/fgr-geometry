@@ -191,12 +191,185 @@ def build_targets():
         "repaired UA z still tracks GA -- refusing to train on a GA proxy"
     return T
 
+# ---------------------------------------------------------------- training / evaluation
+
+def fetus_batches(df,fetuses,frames_per,batch,rng):
+    """FETUS-BALANCED sampling. IMPACT is single-session (935/951 fetuses have exactly ONE study date),
+    so the ~22 frames per fetus are WITHIN-SESSION near-duplicates. Sampling frames uniformly would let
+    a fetus with 60 frames contribute 10x the gradient of one with 6, and near-duplicate frames in the
+    same step inflate the effective batch without adding information. So: sample FETUSES, then a capped
+    number of frames each."""
+    idx_by=df.groupby("nid").indices
+    order=rng.permutation(fetuses)
+    buf=[]
+    for f in order:
+        ii=idx_by[f]
+        pick=rng.choice(ii,min(frames_per,len(ii)),replace=False)
+        buf.extend(pick.tolist())
+        while len(buf)>=batch:
+            yield np.array(buf[:batch]); buf=buf[batch:]
+    if buf: yield np.array(buf)
+
+def load_batch(df,ii,tf):
+    return torch.stack([tf(Image.open(df["img"].iloc[i]).convert("RGB")) for i in ii])
+
+@torch.no_grad()
+def embed_fetuses(mdl,df,fetuses,tf,cap,batch=24):
+    """per-fetus embedding = MEDIAN over up to `cap` frames. Median not mean: within-session frames
+    include off-axis and partially-obscured views, and a median is not dragged by a few of them.
+    Order-invariance is asserted by the caller."""
+    mdl.eval(); out={}
+    idx_by=df.groupby("nid").indices
+    for f in fetuses:
+        ii=idx_by[f][:cap]
+        zs=[]
+        for b0 in range(0,len(ii),batch):
+            x=load_batch(df,ii[b0:b0+batch],tf).to(DEV)
+            zs.append(mdl.embed(x).float().cpu())
+        Z=torch.cat(zs); out[f]=Z.median(0).values.numpy()
+    return out
+
+def val_score(pred,targ,mask):
+    """EARLY-STOPPING CRITERION for masked multi-task targets: mean per-target Spearman over OBSERVED
+    entries, averaged across targets. Chosen over 'GA alone' deliberately -- GA is the densest target
+    (988/991) and would keep improving while the Doppler heads overfit unchecked, so stopping on GA
+    would silently select an epoch that is bad for the targets that justify the multi-task design.
+    Each target contributes equally regardless of its n, so a fold that happens to be short on one
+    Doppler measure cannot dominate the stopping decision."""
+    rs=[]
+    for j in range(targ.shape[1]):
+        m=mask[:,j]>0
+        if m.sum()>=20:
+            r=spearmanr(pred[m,j],targ[m,j]).statistic
+            if np.isfinite(r): rs.append(r)
+    return float(np.mean(rs)) if rs else float("nan")
+
+def run_fold(df,T,fold,centres,a,tf,build):
+    tr=df[df.fold!=fold]; te=df[df.fold==fold]
+    tr_f=np.array(sorted(tr["nid"].unique())); te_f=np.array(sorted(te["nid"].unique()))
+    assert len(set(tr_f)&set(te_f))==0, "fetus in both train and test"
+    # inner split for early stopping, ALSO grouped by fetus
+    rng=np.random.default_rng(1000+fold)
+    perm=rng.permutation(tr_f); n_in=max(30,int(0.2*len(perm)))
+    in_f=set(perm[:n_in].tolist()); fit_f=np.array([f for f in tr_f if f not in in_f])
+    mdl=build().to(DEV)
+    tp=[p for p in mdl.parameters() if p.requires_grad]
+    opt=torch.optim.AdamW(tp,lr=a.lr,weight_decay=1e-4)
+    # per-target SD from the TRAINING FOLD ONLY (a test-set SD would be leakage)
+    Ttr=T.reindex(fit_f)
+    sd=torch.tensor(np.nan_to_num(Ttr[DOPPLER].std().values,nan=1.0),dtype=torch.float32,device=DEV)
+    ga_tr=T["EG_ecoIMPACT"]
+    best=(-np.inf,0,None); hist=[]
+    for ep in range(a.epochs):
+        mdl.train()
+        for ii in fetus_batches(tr,fit_f,a.frames_per_fetus,a.batch,rng):
+            nid=df["nid"].iloc[ii].values
+            gav=ga_tr.reindex(nid).values.astype(float)
+            ok=np.isfinite(gav)
+            if ok.sum()<2: continue
+            x=load_batch(df,ii,tf).to(DEV)
+            lg,dp,_=mdl(x)
+            sb=torch.tensor(soft_bins(gav[ok],centres,a.sigma_dating),dtype=torch.float32,device=DEV)
+            loss_ga=-(sb*F.log_softmax(lg[torch.tensor(ok,device=DEV)],-1)).sum(-1).mean()
+            tv=T[DOPPLER].reindex(nid).values.astype(float)
+            msk=torch.tensor(np.isfinite(tv),dtype=torch.float32,device=DEV)
+            tt=torch.tensor(np.nan_to_num(tv),dtype=torch.float32,device=DEV)
+            loss_dp=masked_target_loss(dp,tt,msk,sd)
+            loss=loss_ga+loss_dp
+            opt.zero_grad(); loss.backward()
+            torch.nn.utils.clip_grad_norm_(tp,1.0); opt.step()
+        # inner validation
+        mdl.eval(); P=[]; Tt=[]; M=[]
+        with torch.no_grad():
+            for f in perm[:n_in]:
+                ii=df.index[(df.nid==f)].values[:a.eval_cap]
+                if len(ii)==0: continue
+                x=load_batch(df,ii,tf).to(DEV)
+                _,dpv,_=mdl(x); P.append(dpv.float().cpu().numpy().mean(0))
+                tv=T[DOPPLER].reindex([f]).values.astype(float)[0]
+                Tt.append(np.nan_to_num(tv)); M.append(np.isfinite(tv).astype(float))
+        vs=val_score(np.array(P),np.array(Tt),np.array(M)) if P else float("nan")
+        hist.append(vs)
+        if np.isfinite(vs) and vs>best[0]:
+            best=(vs,ep,{k:v.detach().cpu().clone() for k,v in mdl.state_dict().items() if v.requires_grad or True})
+        print(f"    fold{fold} ep{ep} val_meanrho {vs:+.3f}{'  *' if best[1]==ep else ''}",flush=True)
+        if ep-best[1]>=5: print(f"    early stop (no gain in 5 epochs)",flush=True); break
+    if best[2] is not None: mdl.load_state_dict(best[2])
+    return mdl,te_f,best[0],best[1],hist
+
+def evaluate(Zad,Zfr,fetuses,T,outcomes,fold_of):
+    """OUT-OF-FOLD evaluation. Every readout is a ridge fitted on TRAIN folds and applied to the TEST
+    fold, for BOTH arms, on the SAME fetus split -- so 'adapted beats frozen' cannot be a fold artefact.
+
+    THE THREE QUESTIONS, in order of what they can establish:
+      1. did the auxiliary task actually improve?  adapted vs frozen on GA and on each Doppler target.
+         If this fails, nothing downstream means anything: the adaptation did not happen.
+      2. does the adapted embedding carry SIZE better?  biometry was HELD OUT of training precisely so
+         this stays askable.
+      3. does the SIZE-ORTHOGONAL part carry outcome?  the appearance score is residualised on the
+         predicted-size score with the projection FITTED INSIDE THE TRAINING FOLD, and
+         corr(residual, size) is REPORTED -- because a subtraction residual would carry |r|=0.56 with
+         the very size it claims to exclude at this project's measured appearance->size strength.
+    """
+    fe=np.array(fetuses); folds=np.array([fold_of[f] for f in fe])
+    def oof(Z,y):
+        yy=np.asarray(y,float); pred=np.full(len(fe),np.nan)
+        for k in np.unique(folds):
+            tr=(folds!=k)&np.isfinite(yy); te=(folds==k)
+            if tr.sum()<50 or te.sum()<5: continue
+            M=RidgeCV(alphas=np.logspace(-2,4,25)).fit(Z[tr],yy[tr])
+            pred[te]=M.predict(Z[te])
+        m=np.isfinite(pred)&np.isfinite(yy)
+        return pred,(float(spearmanr(pred[m],yy[m]).statistic) if m.sum()>30 else np.nan)
+    out={"n_fetuses":int(len(fe))}
+    # --- Q1: trained targets ---
+    out["trained_targets"]={}
+    for c in ["EG_ecoIMPACT"]+DOPPLER:
+        if c not in T.columns: continue
+        y=T[c].reindex(fe).values
+        _,r_ad=oof(Zad,y); _,r_fr=oof(Zfr,y)
+        out["trained_targets"][c]={"adapted_r":r_ad,"frozen_r":r_fr,"delta":r_ad-r_fr,
+                                  "n_obs":int(np.isfinite(y).sum())}
+    # --- Q2: HELD-OUT biometry comparator ---
+    out["heldout_biometry"]={}
+    for c in BIOMETRY:
+        if c not in T.columns: continue
+        y=T[c].reindex(fe).values
+        _,r_ad=oof(Zad,y); _,r_fr=oof(Zfr,y)
+        out["heldout_biometry"][c]={"adapted_r":r_ad,"frozen_r":r_fr,"delta":r_ad-r_fr}
+    # --- Q3: size-orthogonal appearance vs outcome ---
+    size=T["EFW_ecoIMPACT"].reindex(fe).values.astype(float)
+    out["size_orthogonal"]={}
+    for arm,Z in (("adapted",Zad),("frozen",Zfr)):
+        s_pred,_=oof(Z,size)
+        res={}
+        for oname,yv in outcomes.items():
+            y=np.asarray([yv.get(f,np.nan) for f in fe],float)
+            a_pred,_=oof(Z,y)                      # appearance score for this endpoint
+            # orthogonalise INSIDE folds
+            orth=np.full(len(fe),np.nan)
+            for k in np.unique(folds):
+                tr=(folds!=k)&np.isfinite(a_pred)&np.isfinite(s_pred)
+                te=(folds==k)&np.isfinite(a_pred)&np.isfinite(s_pred)
+                if tr.sum()<50 or te.sum()<5: continue
+                g=LinearRegression().fit(s_pred[tr,None],a_pred[tr])
+                orth[te]=a_pred[te]-g.predict(s_pred[te,None])
+            m=np.isfinite(orth)&np.isfinite(y)
+            ms=np.isfinite(orth)&np.isfinite(s_pred)
+            res[oname]={"r_raw":float(spearmanr(a_pred[m],y[m]).statistic) if m.sum()>30 else np.nan,
+                        "r_size_orthogonal":float(spearmanr(orth[m],y[m]).statistic) if m.sum()>30 else np.nan,
+                        "corr_residual_with_size":float(spearmanr(orth[ms],s_pred[ms]).statistic) if ms.sum()>30 else np.nan,
+                        "n":int(m.sum())}
+        out["size_orthogonal"][arm]=res
+    return out
+
 def main():
     ap=argparse.ArgumentParser()
     ap.add_argument("--folds",type=int,default=5); ap.add_argument("--epochs",type=int,default=20)
     ap.add_argument("--sigma-dating",type=float,default=0.7,help="GA label sigma in weeks (CRL dating ~+/-5-7d)")
     ap.add_argument("--batch",type=int,default=24); ap.add_argument("--frames-per-fetus",type=int,default=4)
-    ap.add_argument("--lr",type=float,default=1e-4); ap.add_argument("--check",action="store_true")
+    ap.add_argument("--lr",type=float,default=1e-4); ap.add_argument("--eval-cap",type=int,default=8,help="frames per fetus at eval (median-pooled)")
+    ap.add_argument("--check",action="store_true")
     a=ap.parse_args()
     centres=np.arange(GA_LO,GA_HI+1e-9,GA_STEP)
     df=frame_table(); T=build_targets()
@@ -260,14 +433,75 @@ def main():
         json.dump(res,open(os.path.join(OUTP,"lora_check.json"),"w"),indent=2,default=str)
         print("CHECK OK",flush=True); return
 
+    outcomes={}
+    _e=pd.read_excel(os.path.join(ROOT,"data_local","IMPACT_ecocardio_zscores_corrected.xlsx"))
+    _e["nid"]=_e["Cod"].apply(lambda x: str(int(float(x))) if pd.notna(x) else "NA")
+    _e=_e.drop_duplicates("nid").set_index("nid")
+    # EVALUATION-ONLY endpoints. percentil_birth is EUROPEAN-DECIMAL in this file (a plain to_numeric
+    # returns 1 usable value of 988), and SGA/LGA are numeric '1.0'/'0.0' not 'yes'/'no' strings.
+    _bp=pd.to_numeric(_e["percentil_birth"].astype(str).str.strip().str.replace(",",".",regex=False),errors="coerce")
+    outcomes["birth_percentile"]=_bp.dropna().to_dict()
+    for _c in ("SGA_birth","LGA_birth"):
+        _v=pd.to_numeric(_e[_c],errors="coerce"); outcomes[_c]=(_v>0).astype(float).where(_v.notna()).dropna().to_dict()
+    assert len(outcomes["birth_percentile"])>500 and sum(outcomes["SGA_birth"].values())>100, \
+        f"outcome parse implausible: bp={len(outcomes['birth_percentile'])} sga={sum(outcomes['SGA_birth'].values())}"
+    print(f"  eval-only outcomes: birth_pct n={len(outcomes['birth_percentile'])} "
+          f"SGA={int(sum(outcomes['SGA_birth'].values()))} LGA={int(sum(outcomes['LGA_birth'].values()))}",flush=True)
+
     fold=np.zeros(len(df),dtype=int)
     for k,(_,te) in enumerate(GroupKFold(a.folds).split(df,groups=df["nid"])): fold[te]=k
     df["fold"]=fold
     fh=hashlib.sha256(pd.util.hash_pandas_object(df[["nid","fold"]],index=False).values.tobytes()).hexdigest()[:16]
     df[["nid","fold"]].drop_duplicates().to_csv(os.path.join(HAND,"lora_folds.csv"),index=False)
     res["fold_hash"]=fh; print(f"  folds written, hash {fh} (must match across frozen and adapted arms)",flush=True)
+    fold_of=dict(zip(df["nid"],df["fold"]))
+    build=lambda: AdaptedFetalCLIP(BUILDERS["FetalCLIP"]()[0],len(centres),len(DOPPLER))
+    Zad={}; Zfr={}; per_fold=[]
+    for k in range(a.folds):
+        t0=time.time()
+        mdl,te_f,vbest,ebest,hist=run_fold(df,T,k,centres,a,tf,build)
+        Zad.update(embed_fetuses(mdl,df,te_f,tf,a.eval_cap))
+        # FROZEN arm: same module instance with the LoRA path REMOVED, so the only difference between
+        # arms is the adapter -- not a separate model load, not different preprocessing, not a
+        # different pooling. Same fetuses, same frames, same fold.
+        byp={}
+        for blk_ in mdl.v.transformer.resblocks:
+            if hasattr(blk_,"_lora"): byp[blk_]=blk_._lora; del blk_._lora
+        Zfr.update(embed_fetuses(mdl,df,te_f,tf,a.eval_cap))
+        for blk_,l_ in byp.items(): blk_._lora=l_
+        per_fold.append({"fold":k,"best_epoch":int(ebest),"best_val_meanrho":float(vbest),
+                         "val_history":[float(h) for h in hist],"n_test_fetuses":int(len(te_f)),
+                         "minutes":round((time.time()-t0)/60,1)})
+        print(f"  fold {k} done: best ep {ebest} val {vbest:+.3f} ({per_fold[-1]['minutes']} min)",flush=True)
+        del mdl
+        if DEV=="cuda": torch.cuda.empty_cache()
+    fe=sorted(set(Zad)&set(Zfr))
+    Za=np.stack([Zad[f] for f in fe]); Zf=np.stack([Zfr[f] for f in fe])
+    ident=float(np.abs(Za-Zf).max())
+    res["per_fold"]=per_fold
+    res["adapted_vs_frozen_embedding_maxdiff"]=ident
+    assert ident>1e-5, (f"adapted and frozen embeddings are identical (max|diff|={ident:.2e}) -- the "
+        "adapter learned nothing or was bypassed in both arms. Do not interpret any result.")
+    res["evaluation"]=evaluate(Za,Zf,fe,T,outcomes,fold_of)
+    tt=res["evaluation"]["trained_targets"]
+    print("\n  Q1 TRAINED TARGETS (did adaptation happen at all?)",flush=True)
+    for c,v in tt.items():
+        print(f"    {c:16s} adapted {v['adapted_r']:+.3f} frozen {v['frozen_r']:+.3f} "
+              f"delta {v['delta']:+.3f}",flush=True)
+    print("  Q2 HELD-OUT BIOMETRY (never trained on)",flush=True)
+    for c,v in res["evaluation"]["heldout_biometry"].items():
+        print(f"    {c:16s} adapted {v['adapted_r']:+.3f} frozen {v['frozen_r']:+.3f} delta {v['delta']:+.3f}",flush=True)
+    print("  Q3 SIZE-ORTHOGONAL APPEARANCE vs EVAL-ONLY OUTCOMES",flush=True)
+    for arm,d_ in res["evaluation"]["size_orthogonal"].items():
+        for o,v in d_.items():
+            print(f"    [{arm:7s}] {o:17s} raw {v['r_raw']:+.3f} size-orth {v['r_size_orthogonal']:+.3f} "
+                  f"| resid-size corr {v['corr_residual_with_size']:+.3f} (must be ~0) n={v['n']}",flush=True)
+    dmax=max((abs(v["delta"]) for v in tt.values() if np.isfinite(v["delta"])),default=0.0)
+    res["VERDICT"]=("ADAPTATION DID NOT HAPPEN: no trained target improved by more than the 0.041 "
+        "minimum detectable paired delta-r. Nothing downstream is interpretable." if dmax<0.041 else
+        "adaptation moved at least one trained target; read Q2/Q3 for whether it carries anything new")
+    print(f"\n  {res['VERDICT']}",flush=True)
     json.dump(res,open(os.path.join(OUTP,"lora_finetune.json"),"w"),indent=2,default=str)
-    print("  SETUP COMPLETE -- training loop runs per fold; see --check for a dry run",flush=True)
     print("saved out_probe/lora_finetune.json\nDONE",flush=True)
 
 if __name__=="__main__": main()
