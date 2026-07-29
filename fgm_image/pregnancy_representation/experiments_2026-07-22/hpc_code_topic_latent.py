@@ -43,7 +43,7 @@ HERE=os.path.dirname(os.path.abspath(__file__))
 OUT=os.environ.get("GA_OUT_DIR", os.path.join(HERE,"out_usfmae"))
 OUTP=os.path.join(HERE,"out_probe"); os.makedirs(OUTP,exist_ok=True)
 INDEX=os.path.join(HERE,"ga_cnn","ga_cnn_index.csv")
-OUTCOMES=[os.path.join(HERE,"outcomes.csv"),
+OUTCOMES=[x for x in [os.environ.get("GA_OUTCOMES")] if x]+[os.path.join(HERE,"outcomes.csv"),
           "/mnt/beegfs/home/tiago.fernandes/PyCharmProjects/fgr-geometry/data_local/impact_outcomes.csv"]
 
 def hist_from_codes(codes,K):
@@ -115,11 +115,22 @@ def main():
     res={"tag":tag,"n_frames":int(H.shape[0]),"n_fetuses":int(Hf.shape[0]),"n_codes":int(H.shape[1]),
          "blocks":{k:[int(s),int(e)] for k,(s,e) in offs.items()},"ranks":{}}
     blk=lambda j: next((f"{k}#{j-s}" for k,(s,e) in offs.items() if s<=j<e), str(j))
-    # frame-level reference: GA r from the raw histogram (the ceiling for topics)
-    r_hist=oof_r(H,ga,fid); print(f"  raw histogram (frames) held-out GA r={r_hist:.3f}",flush=True)
-    res["raw_histogram_frame_GA_r"]=r_hist
+    # BASELINES -- must be UNIT-MATCHED. The topics are fitted/scored per FETUS, so the valid
+    # ceiling for them is the per-FETUS raw histogram, NOT the per-frame one (per-fetus mean
+    # pooling suppresses noise and mechanically raises r). Both are reported and labelled; the
+    # frame-level FetalCLIP clock (r=0.469) is a FRAME-level number and must only be compared
+    # against the frame-level histogram row.
+    r_hist_frame=oof_r(H,ga,fid)
+    r_hist_fetus=oof_r(Hf,gf,uf)
+    print(f"  raw histogram  FRAME-level held-out GA r={r_hist_frame:.3f}  (compare vs FetalCLIP frame clock 0.469)",flush=True)
+    print(f"  raw histogram  FETUS-level held-out GA r={r_hist_fetus:.3f}  <-- THE valid ceiling for the topic latents below",flush=True)
+    res["raw_histogram_frame_GA_r"]=r_hist_frame
+    res["raw_histogram_fetus_GA_r"]=r_hist_fetus
+    res["unit_note"]=("topic latents are per-FETUS; their ceiling is raw_histogram_fetus_GA_r. "
+                      "raw_histogram_frame_GA_r is the only value comparable to the frame-level "
+                      "FetalCLIP full-embedding clock r=0.469 on these IMPACT frames.")
     for R in ranks:
-        nmf=NMF(R,init="nndsvda",max_iter=600,random_state=0)
+        nmf=NMF(R,init="nndsvda",max_iter=8000,tol=1e-5,random_state=0)
         W=nmf.fit_transform(np.maximum(Hf,0)); Hc=nmf.components_          # W: fetus x topic
         fa=FactorAnalysis(R,random_state=0).fit(StandardScaler().fit_transform(Hf))
         Wfa=fa.transform(StandardScaler().fit_transform(Hf))
@@ -142,19 +153,32 @@ def main():
         # matched-capacity null: same rank on a shuffled histogram
         rng=np.random.default_rng(0); Hs=Hf.copy()
         for j in range(Hs.shape[1]): Hs[:,j]=rng.permutation(Hs[:,j])
-        Wn=NMF(R,init="nndsvda",max_iter=600,random_state=0).fit_transform(np.maximum(Hs,0))
+        Wn=NMF(R,init="nndsvda",max_iter=8000,tol=1e-5,random_state=0).fit_transform(np.maximum(Hs,0))
         rga_null=oof_r(Wn,gf,uf); rga_shufGA=oof_r(W,rng.permutation(gf),uf)
         entry={"GA_r_topics_NMF":rga,"GA_r_topics_FA":rga_fa,"GA_monotonicity_spearman":mono,
                "plane_eta2":eta,"silhouette_k2_3_4":sil,"dip_p":dip,"top_codes_per_topic":tops,
                "null_matched_capacity_shuffled_hist_GA_r":rga_null,"null_shuffledGA_GA_r":rga_shufGA}
+        entry["nmf_n_iter"]=int(getattr(nmf,"n_iter_",-1))
+        entry["nmf_converged"]=bool(getattr(nmf,"n_iter_",10**9)<8000)
         res["ranks"][str(R)]=entry
         print(f"  R={R:2d} GA r NMF={rga:.3f} FA={rga_fa:.3f} | max|mono|={max(abs(m) for m in mono):.2f} "
               f"| max plane eta2={np.nanmax(eta):.2f} | sil k2={sil[2]:.3f} "
-              f"| NULLS hist-shuf {rga_null:.3f} GA-shuf {rga_shufGA:.3f}",flush=True)
+              f"| NULLS hist-shuf {rga_null:.3f} GA-shuf {rga_shufGA:.3f} "
+              f"| nmf_iter {entry['nmf_n_iter']}{'' if entry['nmf_converged'] else ' NOT-CONVERGED'}",flush=True)
+        for k in range(min(R,4)): print(f"      topic{k}: mono={mono[k]:+.2f} eta2={eta[k]:.2f} top={tops[k][:5]}",flush=True)
     # outcomes as EVAL-ONLY read-offs at the best rank by GA r
+    rs=[(int(k),res["ranks"][k]["GA_r_topics_NMF"]) for k in res["ranks"]]; rs.sort()
+    mono_in_rank=all(b>=a-1e-9 for (_,a),(_,b) in zip(rs,rs[1:]))
+    res["GA_r_monotonic_in_rank"]=bool(mono_in_rank)
+    if mono_in_rank: print("  NOTE GA r rises monotonically with rank and never plateaus -> the top rank is the LARGEST TRIED, not a selected optimum (capacity trend).",flush=True)
     best=max(res["ranks"],key=lambda k: res["ranks"][k]["GA_r_topics_NMF"])
-    Rb=int(best); Wb=NMF(Rb,init="nndsvda",max_iter=600,random_state=0).fit_transform(np.maximum(Hf,0))
+    Rb=int(best); Wb=NMF(Rb,init="nndsvda",max_iter=8000,tol=1e-5,random_state=0).fit_transform(np.maximum(Hf,0))
     oc,src=load_outcomes(uf); res["outcomes_source"]=src; res["outcome_readoffs_rank"]=Rb; res["outcome_readoffs"]={}
+    if not src:   # fail LOUDLY: silent omission of the eval anchors is worse than an error
+        res["outcome_readoffs"]="NOT RUN -- no outcomes csv found (searched: "+"; ".join(OUTCOMES)+")"
+        print("  !! OUTCOME READ-OFFS NOT RUN -- no outcomes csv found. Searched:",flush=True)
+        for _p in OUTCOMES: print(f"       exists={os.path.exists(_p)}  {_p}",flush=True)
+        print("     -> set GA_OUTCOMES=/path/to/impact_outcomes.csv and re-run",flush=True)
     for k,v in (oc or {}).items():
         if v is None: continue
         v=np.asarray(v); m=np.isfinite(v.astype(float)) if v.dtype!=bool else np.ones(len(v),bool)
