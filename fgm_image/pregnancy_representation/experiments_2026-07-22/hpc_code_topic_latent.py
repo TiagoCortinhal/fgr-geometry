@@ -7,8 +7,10 @@ hoc. Here each input dimension is "how much of visual word k is in this scan", a
 is a group of co-occurring words -- nameable, and viewable as the real patches that use it.
 
 Licensed by the preceding probe: the 320 code frequencies retain held-out GA r=0.385 vs the
-continuous full-embedding clock 0.435 on the same frames (88%), so the histogram is a
-SUFFICIENT representation, not a lossy summary.
+FetalCLIP continuous full-embedding clock r=0.469 (L18/24) on the same IMPACT frames -- 82% of
+that ceiling -- so the histogram is a SUFFICIENT representation, not a lossy summary.
+(NB 0.435 is the USF-MAE value from the same 4-encoder IMPACT run, NOT FetalCLIP; these codes
+are FetalCLIP-derived so 0.469 is the valid same-cohort ceiling.)
 
 Construction
   per-image code histogram (320-d, shared+private) -> pool per FETUS (mean over that fetus's

@@ -63,5 +63,73 @@
     "SHARED-ONLY metric partly built in: shared = MEAN across groups while each group is the reconstruction target, so if groups differ the mean is inherently a poor predictor. The direction is real; the +0.53 effect size is inflated by the mean+residual construction.",
     "EMA codebook + dead-code reinit were required: an earlier image-level VQ (gradient codebook, full-batch) collapsed to 9/32-12/64 codes with near-zero GA ladder and was NOT reported as a finding."
   ],
-  "next_control": "bit-matched factorised vs flat (e.g. shared K=32 + private K=8x3 ~= 14 bits vs flat K=16384 impractical -> match downward: flat K=64 (6 bits) vs shared K=16 + private K=4x3 (~10 bits), or equalise by shrinking private codebooks until total bits == flat bits)"
+  "next_control": "bit-matched factorised vs flat (e.g. shared K=32 + private K=8x3 ~= 14 bits vs flat K=16384 impractical -> match downward: flat K=64 (6 bits) vs shared K=16 + private K=4x3 (~10 bits), or equalise by shrinking private codebooks until total bits == flat bits)",
+  "code_combination_GA_probe": {
+    "script": "hpc_code_combo_ga.py",
+    "source_codes": "factvq_codes_FetalCLIP_factVQ_L12g3_Ks128_Kp64.npz",
+    "n_frames": 20413,
+    "n_fetuses": 908,
+    "GA_range_wk": [
+      26.0,
+      40.6
+    ],
+    "cohort": "IMPACT (narrow late window)",
+    "protocol": "per-image code-frequency histograms; GroupKFold-by-fetus; greedy forward selection INSIDE training folds only (nested, inner 3-fold), r measured on held-out fetuses; GA-shuffle null through the identical pipeline",
+    "all_codes_heldout_r": {
+      "shared_128": 0.374,
+      "private_shallow_L1_7_64": 0.134,
+      "private_mid_L9_16_64": 0.23,
+      "private_deep_L18_24_64": 0.164,
+      "ALL_320": 0.385
+    },
+    "combination_heldout_r_by_size": {
+      "1": 0.125,
+      "2": 0.175,
+      "3": 0.213,
+      "5": 0.229,
+      "10": 0.246,
+      "20": 0.271
+    },
+    "selection_stability_5of5": [
+      "private_g1#46",
+      "shared#127",
+      "shared#40",
+      "shared#19",
+      "shared#95",
+      "private_g1#21",
+      "shared#63",
+      "shared#125"
+    ],
+    "null_shuffled_GA": {
+      "all_codes_r": -0.006,
+      "combo_k20_r": 0.002
+    },
+    "reference_ceiling": {
+      "full_embedding_FetalCLIP_clock_same_IMPACT_frames_r": 0.469,
+      "FetalCLIP_best_layer": "L18 of 24",
+      "other_encoders_same_IMPACT_run": {
+        "USF-MAE": 0.435,
+        "DINOv2": 0.425,
+        "USFM": 0.407
+      },
+      "clinical_wide_GA_FetalCLIP_clock_r": 0.906,
+      "note": "The VQ codes are FetalCLIP-derived, so the valid same-cohort ceiling is the FetalCLIP IMPACT clock r=0.469 (L18/24). An earlier version of this file wrongly used 0.435, which is the USF-MAE value from the same 4-encoder run. The 0.906 is a DIFFERENT cohort (30257 clinical frames, GA 6.2-41.6wk) and is not a ceiling for these IMPACT frames (GA 26-40.6wk)."
+    },
+    "findings": [
+      "The discrete vocabulary RETAINS most of the continuous clock: all 320 code frequencies give held-out r=0.385 vs the FetalCLIP full-embedding clock r=0.469 on the same IMPACT frames (82% of the ceiling). Quantisation to 320 visual words costs little GA information.",
+      "GA lives in the DEPTH-SHARED vocabulary: shared alone r=0.374 (128 codes) nearly equals ALL 320 (0.385), while each depth-private vocabulary is much weaker (shallow 0.134, mid 0.230, deep 0.164). Adding all three private blocks to shared buys only +0.011.",
+      "NO compact subset carries GA: nested forward selection rises slowly and monotonically (1 code 0.125 -> 20 codes 0.271) and at k=20 is still well below all-320 (0.385). GA is genuinely DISTRIBUTED across the vocabulary, not concentrated in a few words.",
+      "Selection is stable and non-random: the same features are chosen in 5/5 folds (6 of the top 8 are SHARED codes), and the GA-shuffle null is flat (all-codes r=-0.006, combo k=20 r=0.002) - so the selection procedure itself produces nothing by chance."
+    ],
+    "corrects_earlier_framing": "An earlier reading called GA 'diffuse' based on single-code Spearman rho of 0.10-0.15. That was a UNIVARIATE statement only. Multivariately the codes carry GA well (0.385 of a 0.435 ceiling). The correct statement is: GA is distributed across many codes (no single code or small subset carries it) and concentrated in the depth-SHARED vocabulary rather than any single depth.",
+    "caveats": [
+      "IMPACT-only, GA 26-40.6wk (narrow). The distributed/shared conclusions are established on this window; the wide-GA clinical set was not run through this probe.",
+      "Selection used an in-fold |corr| pre-screen capped at 64 candidates, so the k-subset curve is a greedy path, not the global optimum over all C(320,k) subsets - it bounds, not proves, subset performance.",
+      "Shared vs private are not equal-capacity (128 vs 64 codes each); part of shared's advantage is its larger vocabulary. The shared-vs-ALL comparison (0.374 vs 0.385) is the capacity-fair statement, not shared-vs-one-private."
+    ],
+    "retained_fraction_of_ceiling": 0.821,
+    "corrections": [
+      "Ceiling corrected 0.435 -> 0.469: 0.435 was USF-MAE, not FetalCLIP. The codes are FetalCLIP-derived, so retained fraction is 82.1% (not the 88.5% previously stated)."
+    ]
+  }
 }
