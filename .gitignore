@@ -30,3 +30,5 @@ out_usfmae/
 .idea/
 **/code_topics_*.npz
 **/crossenc_zstats_*.npz
+handoff/
+**/handoff/
