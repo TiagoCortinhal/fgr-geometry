@@ -164,7 +164,13 @@ def main():
               "whole_image_permutation_AMI":float(ami(labs[0],shuf))}
             np.savez(os.path.join(OUT,f"wp2codes_{enc}_K{a.K}{'' if a.cohort=='impact' else '_clin'}.npz"),
                      codes=labs[0].reshape(len(fit),npatch).astype(np.int16),
-                     centroids=cents[0], nid=fit["nid"].astype(str).values,
+                     centroids=cents[0],
+                     # ALL seeds' centroids + label maps: naming-reliability needs to match codes
+                     # ACROSS seeds and ask whether a matched code gets the SAME tabular profile.
+                     # Saving only seed 0 would make that test impossible without a refit.
+                     centroids_all=np.stack(cents),
+                     codes_all=np.stack([l.reshape(len(fit),npatch).astype(np.int16) for l in labs]),
+                     nid=fit["nid"].astype(str).values,
                      plane=fit["plane_prop"].values, ga=fit["ga_weeks_recovered"].values,
                      names=fit["new_filename"].values, layer_index=li, seeds_ami=np.array(pair_ami))
             print(f"  [{enc}] mean across-seed AMI {np.mean(pair_ami):.3f} (min {np.min(pair_ami):.3f}) | "
