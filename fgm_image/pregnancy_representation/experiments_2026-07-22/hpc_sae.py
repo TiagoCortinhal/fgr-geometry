@@ -187,48 +187,45 @@ def fit_subsample(df,arm,fit_rows=None,seed=0):
 
 @torch.no_grad()
 def stream_profiles(df,arm,sae,mu,sd,npatch,seed=0):
-    """SECOND pass: per-frame max/mean-pooled feature profiles + spatial-entropy accumulator.
-    Tokens are pooled and discarded per batch, so nothing full-size is ever held."""
+    """SECOND pass: per-frame profiles + SPATIAL SUMMARIES. Tokens pooled and discarded per batch.
+
+    WHY SPATIAL SUMMARIES. max/mean pooling over the 256 patches answers "how much did this feature
+    fire in this frame" but throws away WHERE -- whether it fired in a tight cluster or scattered,
+    and in which region. Keeping all 256 values per frame is 86 GB (that is what OOM'd twice), so
+    instead we keep three cheap statistics that preserve the spatial information that matters:
+      centroid (row,col)  weighted mean position of the feature's activation on the 16x16 grid
+      dispersion          activation-weighted RMS distance from that centroid: SMALL = the feature
+                          fires on a localised structure, LARGE = it fires diffusely (which is the
+                          signature of an acquisition/texture feature rather than an anatomical one)
+      position histogram  cohort-level, per feature: how often each grid cell is in the feature's
+                          top quartile. One 256 x M matrix, not per frame -- 4 MB.
+    Cost ~1.0 GB on disk, ~0 extra peak RAM (all accumulated per batch).
+    MULTIPLICITY: these are DECLARED as spatial descriptors, NOT as new endpoints -- they characterise
+    features, they are not additional tests against the WP2 axis or any outcome."""
+    gg=int(round(npatch**0.5))
+    rr,cc=torch.meshgrid(torch.arange(gg,device=DEV).float(),
+                         torch.arange(gg,device=DEV).float(),indexing="ij")
+    rr=rr.reshape(-1); cc=cc.reshape(-1)                       # (npatch,)
     mx=np.zeros((len(df),M),np.float32); mn=np.zeros((len(df),M),np.float32)
-    pos=torch.zeros(npatch,M,device=DEV); nfr=0
+    cen=np.zeros((len(df),2,M),np.float32); disp=np.zeros((len(df),M),np.float32)
+    pos=torch.zeros(npatch,M,device=DEV); topq=torch.zeros(npatch,M,device=DEV); nfr=0
     for b0,nb,npa,X in stream_tokens(df,arm,seed=seed):
         xb=((X.float()-mu)/(sd+1e-6)).to(DEV)
         a,_=sae.encode(xb)
-        A=a.reshape(nb,npa,M)
+        A=a.reshape(nb,npa,M)                                  # (B, npatch, M)
         mx[b0:b0+nb]=A.max(1).values.cpu().numpy(); mn[b0:b0+nb]=A.mean(1).cpu().numpy()
-        pos+=A.sum(0); nfr+=nb
-        del X,xb,a,A
+        w=A/(A.sum(1,keepdim=True)+1e-9)                       # activation weights over position
+        cr=(w*rr[None,:,None]).sum(1); ccl=(w*cc[None,:,None]).sum(1)
+        cen[b0:b0+nb,0]=cr.cpu().numpy(); cen[b0:b0+nb,1]=ccl.cpu().numpy()
+        d2=(rr[None,:,None]-cr[:,None,:])**2+(cc[None,:,None]-ccl[:,None,:])**2
+        disp[b0:b0+nb]=(w*d2).sum(1).clamp_min(0).sqrt().cpu().numpy()
+        pos+=A.sum(0)
+        thr=A.quantile(0.75,dim=1,keepdim=True)                # per frame per feature
+        topq+=(A>=thr).float().sum(0)
+        nfr+=nb; del X,xb,a,A,w,d2
     pos=(pos/max(nfr,1)).cpu().numpy(); pos=pos/(pos.sum(0,keepdims=True)+1e-9)
-    return mx,mn,-(pos*np.log(pos+1e-12)).sum(0)
-
-def fit_sae(X,seed,epochs=EPOCHS,bs=8192,lr=3e-4):
-    """X is the already-subsampled fp16 CPU tensor from fit_subsample(); batches cast on device."""
-    sae=TopKSAE(X.shape[1],seed=seed).to(DEV)
-    opt=torch.optim.Adam(sae.parameters(),lr=lr)
-    n=X.shape[0]; g=torch.Generator().manual_seed(seed)
-    for ep in range(epochs):
-        perm=torch.randperm(n,generator=g); tot=0.0; sae.fires.zero_()
-        for a in range(0,n,bs):
-            xb=X[perm[a:a+bs]].to(DEV).float()
-            xh,act,idx=sae(xb)
-            loss=(xh-xb).pow(2).mean()+ (1/32)*sae.aux(xb,xh,act)
-            opt.zero_grad(); loss.backward(); opt.step()
-            with torch.no_grad(): sae.fires.scatter_add_(0,idx.reshape(-1),torch.ones(idx.numel(),device=DEV))
-            tot+=loss.item()*len(xb)
-        alive=float((sae.fires>0).float().mean())
-        print(f"      seed{seed} ep{ep} loss {tot/n:.4f} alive {alive:.3f}",flush=True)
-    return sae
-
-@torch.no_grad()
-def frame_profiles(sae,X,n_frames,npatch):
-    """per-frame feature profile, max AND mean pooled over patches (both pre-specified)."""
-    mx=torch.zeros(n_frames,M); mn=torch.zeros(n_frames,M)
-    for f in range(0,n_frames,256):
-        sl=slice(f*npatch,min((f+256),n_frames)*npatch)
-        a,_=sae.encode(X[sl].to(DEV).float())
-        a=a.reshape(-1,npatch,M)
-        mx[f:f+a.shape[0]]=a.max(1).values.cpu(); mn[f:f+a.shape[0]]=a.mean(1).cpu()
-    return mx.numpy(),mn.numpy()
+    return (mx,mn,-(pos*np.log(pos+1e-12)).sum(0),cen,disp,
+            (topq/max(nfr,1)).cpu().numpy().astype(np.float32))
 
 def main():
     ap=argparse.ArgumentParser()
@@ -361,8 +358,12 @@ def main():
     for sN in range(SEEDS):
         sae=fit_sae(Xf,seed=sN)
         alive.append(float((sae.fires>0).float().mean()))
-        mx,mn,ent=stream_profiles(df,a.arm,sae,mu,sd,npatch)     # second pass, nothing full-size held
+        mx,mn,ent,cen,disp,topq=stream_profiles(df,a.arm,sae,mu,sd,npatch)   # second pass, nothing full-size held
         saves[f"prof_max_s{sN}"]=mx; saves[f"prof_mean_s{sN}"]=mn
+        if sN==0:
+            saves["spatial_centroid"]=cen        # (n_frames, 2, M) row/col weighted mean position
+            saves["spatial_dispersion"]=disp     # (n_frames, M) RMS radius: small=localised, large=diffuse
+            saves["topquartile_position"]=topq   # (npatch, M) cohort-level position histogram
         if sN==0:
             sp_ent=ent; saves["W_dec"]=sae.W_dec.detach().cpu().numpy().astype(np.float32)
         del sae
