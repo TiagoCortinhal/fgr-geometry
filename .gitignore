@@ -29,3 +29,4 @@ out_usfmae/
 **/factvq_codes_*.npz
 .idea/
 **/code_topics_*.npz
+**/crossenc_zstats_*.npz

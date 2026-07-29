@@ -153,18 +153,39 @@ def main():
     for e in ENCS:
         t=patch_tokens(e,models[e][0],x0[e]); shapes[e]=tuple(t.shape[1:]); print(f"  {e}: L={t.shape[1]} Np={t.shape[2]} D={t.shape[3]}",flush=True)
     if a.check: print("CHECK OK"); return
-    rec={e:Reconciler(e,*shapes[e]) for e in ENCS}
+    # shapes[e] is (L, Npatch, D) -- pass by NAME: positional *shapes[e] swapped D and npatch,
+    # which built the random matrix as (L,Npatch,CW) and blew up the einsum.
+    rec={e:Reconciler(e,L=shapes[e][0],D=shapes[e][2],npatch=shapes[e][1]) for e in ENCS}
     # layerwise z-score stats (one frozen pass over the FIT subset)
     fit=df.sample(min(a.fit_frames,len(df)),random_state=0).reset_index(drop=True)
-    print(f"  z-score stats on {len(fit)} fit frames ...",flush=True); t0=time.time()
-    acc={e:[torch.zeros(shapes[e][0],shapes[e][2],device=DEV),torch.zeros(shapes[e][0],shapes[e][2],device=DEV),0] for e in ENCS}
-    for i in range(0,len(fit),a.bs):
+    t0=time.time()
+    # cache the ~9min stats pass: a later crash must not cost it again
+    SCACHE=os.path.join(OUT,f"crossenc_zstats_{len(fit)}.npz")
+    if os.path.exists(SCACHE):
+        z=np.load(SCACHE,allow_pickle=True)
         for e in ENCS:
-            t=patch_tokens(e,models[e][0],load_imgs(fit["img"].iloc[i:i+a.bs],models[e][1]).to(DEV))
-            f=t.permute(0,2,1,3).reshape(-1,shapes[e][0],shapes[e][2])
-            acc[e][0]+=f.sum(0); acc[e][1]+=(f**2).sum(0); acc[e][2]+=f.shape[0]
-        if i%(a.bs*40)==0: print(f"    stats {i}/{len(fit)} {time.time()-t0:.0f}s",flush=True)
-    for e in ENCS: rec[e].fit_stats(*acc[e])
+            rec[e].mu=torch.tensor(z[f"{e}_mu"],device=DEV); rec[e].sd=torch.tensor(z[f"{e}_sd"],device=DEV)
+        print(f"  reused z-score stats {SCACHE}",flush=True)
+        acc=None
+    else:
+        acc={e:[torch.zeros(shapes[e][0],shapes[e][2],device=DEV),torch.zeros(shapes[e][0],shapes[e][2],device=DEV),0] for e in ENCS}
+        print(f"  z-score stats on {len(fit)} fit frames ...",flush=True)
+    if acc is not None:
+        for i in range(0,len(fit),a.bs):
+            for e in ENCS:
+                t=patch_tokens(e,models[e][0],load_imgs(fit["img"].iloc[i:i+a.bs],models[e][1]).to(DEV))
+                f=t.permute(0,2,1,3).reshape(-1,shapes[e][0],shapes[e][2])
+                acc[e][0]+=f.sum(0); acc[e][1]+=(f**2).sum(0); acc[e][2]+=f.shape[0]
+            if i%(a.bs*40)==0: print(f"    stats {i}/{len(fit)} {time.time()-t0:.0f}s",flush=True)
+        for e in ENCS: rec[e].fit_stats(*acc[e])
+        np.savez(SCACHE,**{f"{e}_mu":rec[e].mu.cpu().numpy() for e in ENCS},
+                        **{f"{e}_sd":rec[e].sd.cpu().numpy() for e in ENCS})
+        print(f"  saved z-score stats -> {SCACHE}",flush=True)
+    # shape assertion: projection must be (L, D, CW) with D the FEATURE width, not Npatch
+    for e in ENCS:
+        assert rec[e].R.shape==(shapes[e][0],shapes[e][2],CW), f"{e} proj {tuple(rec[e].R.shape)} != {(shapes[e][0],shapes[e][2],CW)}"
+        assert rec[e].mu.shape==(shapes[e][0],shapes[e][2]), f"{e} mu {tuple(rec[e].mu.shape)}"
+    print("  projection shapes OK",flush=True)
     net=CrossEncVQ(len(ENCS),a.K_shared,a.K_private).to(DEV)
     opt=torch.optim.Adam([p for n,p in net.named_parameters() if ".vq_" not in n and not n.startswith("vq_")],a.lr)
     for ep in range(a.epochs):
