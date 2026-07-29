@@ -19,11 +19,12 @@ reconstructed from (shared code + its private code), so we can measure directly:
 All codebooks are EMA-updated with dead-code reinit (no collapse). FetalCLIP frozen (no grads).
 USAGE: python hpc_factorised_vqvae_live.py --n-layers 12 --groups 3 --K-shared 128 --K-private 64 --epochs 15
 """
-import os, json, argparse, time, numpy as np, pandas as pd, torch, torch.nn as nn, torch.nn.functional as F
+import os, sys, json, argparse, time, numpy as np, pandas as pd, torch, torch.nn as nn, torch.nn.functional as F
 from PIL import Image
 import torchvision.transforms as T
 from scipy.stats import spearmanr
 HERE=os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0,HERE)
 ROOT=os.path.abspath(os.path.join(HERE,"..","..",".."))
 OUT=os.environ.get("GA_OUT_DIR", os.path.join(HERE,"out_usfmae")); os.makedirs(OUT,exist_ok=True)
 OUTP=os.path.join(HERE,"out_probe"); os.makedirs(OUTP,exist_ok=True)
@@ -110,6 +111,12 @@ class FactorisedVQVAE(nn.Module):
         return [s.dec[g](torch.cat([zsq,zero],1)) for g in range(s.ngroup)]
 
 def frame_table():
+    """IMPACT: flat basename join. CLINICAL: recursive + prefix-tolerant (the clinical store is
+    nested and on-disk names carry a leading '<digits>_' the index lacks -> flat join gives 0)."""
+    if INDEX.endswith("clinical_index.csv"):
+        from clinical_paths import resolve
+        df,_=resolve(os.environ.get("CLINICAL_ROOT","/mnt/beegfs/groups/collage/data/IMPACT_CLINICAL"),INDEX)
+        return df[df["img"]!=""].reset_index(drop=True)
     df=pd.read_csv(INDEX).copy()
     df["img"]=df["new_filename"].astype(str).apply(lambda n: os.path.join(IMG_DIR,n if n.endswith(".png") else n+".png"))
     return df[df["img"].apply(os.path.exists)].reset_index(drop=True)
