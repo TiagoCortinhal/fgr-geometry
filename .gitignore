@@ -27,3 +27,4 @@ out_usfmae/
 **/*_vqvae_*.pt
 **/fmcache_*.dat
 **/factvq_codes_*.npz
+.idea/

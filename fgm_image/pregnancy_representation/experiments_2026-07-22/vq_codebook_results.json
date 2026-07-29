@@ -1,0 +1,67 @@
+{
+  "task": "discrete visual vocabulary from frozen FetalCLIP patch features (IMPACT, 20413 frames, 12 of 24 layers)",
+  "flat_single_codebook": {
+    "script": "hpc_feature_vqvae_live.py",
+    "K": 256,
+    "zdim": 64,
+    "bits_per_patch": 8.0,
+    "recon_mse_final": 0.3659,
+    "codes_used": "256/256",
+    "epochs": 15,
+    "recon_trajectory": [
+      0.8011,
+      0.6022,
+      0.5295,
+      0.4965,
+      0.4738,
+      0.45,
+      0.4327,
+      0.4184,
+      0.4057,
+      0.3951,
+      0.3874,
+      0.3809,
+      0.3758,
+      0.3714,
+      0.3677
+    ],
+    "max_abs_code_GA_spearman": 0.16,
+    "note": "first run crashed on json int64 AFTER training and lost outputs; rerun with fix saved model+code maps"
+  },
+  "factorised_shared_private": {
+    "script": "hpc_factorised_vqvae_live.py",
+    "groups": 3,
+    "layers_per_group": 4,
+    "K_shared": 128,
+    "K_private": 64,
+    "zs": 64,
+    "zp": 32,
+    "bits_per_patch": 25,
+    "recon_mse_full": 0.2984,
+    "recon_mse_shared_only": 0.8297,
+    "private_gain": 0.5313,
+    "codes_used_shared": "128/128",
+    "codes_used_private": [
+      "64/64",
+      "64/64",
+      "64/64"
+    ],
+    "max_abs_code_GA_spearman": {
+      "shared": 0.15,
+      "private_g0_shallow": 0.1,
+      "private_g1_mid": 0.13,
+      "private_g2_deep": 0.11
+    }
+  },
+  "findings": [
+    "Depth-factorised vocabulary reconstructs better than flat (0.298 vs 0.366) and no codebook collapses (all fully used).",
+    "Depth-specific content dominates: shared-only recon 0.830 (near the ~1.0 no-recon baseline) vs 0.298 full -> the depth-invariant part carries little; the per-depth deviations carry most.",
+    "GA is DIFFUSE, not depth-localised: max |code-freq vs GA| rho is 0.10-0.15 in EVERY vocabulary (shared and all three private). The weak GA structure is a property of FetalCLIP patch features, not of the flat architecture."
+  ],
+  "caveats": [
+    "RECON COMPARISON NOT BIT-MATCHED: flat = 8 bits/patch (1-of-256); factorised = 25 bits/patch (1-of-128 + 3x 1-of-64). Part of the 0.366->0.298 improvement is extra discrete capacity, not factorisation per se. A bit-matched control is required before claiming factorisation itself wins.",
+    "SHARED-ONLY metric partly built in: shared = MEAN across groups while each group is the reconstruction target, so if groups differ the mean is inherently a poor predictor. The direction is real; the +0.53 effect size is inflated by the mean+residual construction.",
+    "EMA codebook + dead-code reinit were required: an earlier image-level VQ (gradient codebook, full-batch) collapsed to 9/32-12/64 codes with near-zero GA ladder and was NOT reported as a finding."
+  ],
+  "next_control": "bit-matched factorised vs flat (e.g. shared K=32 + private K=8x3 ~= 14 bits vs flat K=16384 impractical -> match downward: flat K=64 (6 bits) vs shared K=16 + private K=4x3 (~10 bits), or equalise by shrinking private codebooks until total bits == flat bits)"
+}

@@ -123,7 +123,13 @@ def main():
     assert Ls%a.groups==0, f"{Ls} layers not divisible by {a.groups} groups"
     per=Ls//a.groups; Cg=per*D
     tag=f"FetalCLIP_factVQ_L{Ls}g{a.groups}_Ks{a.K_shared}_Kp{a.K_private}"
+    # BIT BUDGET: the flat single-codebook baseline is log2(K_flat) bits/patch. Factorised is
+    # log2(K_shared) + ngroup*log2(K_private). Print both so the recon comparison is only made
+    # against a bit-MATCHED baseline (extra capacity, not factorisation, can lower recon).
+    bits=np.log2(a.K_shared)+a.groups*np.log2(a.K_private)
     print(f"[{tag}] {len(df)} imgs | layers {sel} | {a.groups} groups x {per} layers x {D}d = Cg {Cg} | grid {g}x{g} | dev {DEV}",flush=True)
+    print(f"  BIT BUDGET {bits:.1f} bits/patch (shared {np.log2(a.K_shared):.0f} + {a.groups}x{np.log2(a.K_private):.0f}) "
+          f"-- compare ONLY against a flat baseline with K=2^{bits:.0f}; else the recon gap is capacity not factorisation",flush=True)
     # per-layer z-score stats (one frozen pass)
     print("  z-score stats (1 frozen pass) ...",flush=True); t0=time.time()
     ssum=torch.zeros(Ls,D,device=DEV); ssq=torch.zeros(Ls,D,device=DEV); nt=0
@@ -184,7 +190,7 @@ def main():
     for gi in range(a.groups):
         print(f"  private g{gi} GA-shift:",[(c,round(r,2)) for c,r in top(gs_priv[gi])],flush=True)
     json.dump({"tag":str(tag),"n_img":int(len(ga)),"grid":int(g),"layers":[int(x) for x in sel],"groups":int(a.groups),
-               "K_shared":int(a.K_shared),"K_private":int(a.K_private),
+               "K_shared":int(a.K_shared),"K_private":int(a.K_private),"bits_per_patch":float(bits),
                "recon_full":float(rfull.mean()),"recon_shared_only":float(rshared.mean()),
                "private_gain":float(rshared.mean()-rfull.mean()),
                "shared_used":int((net.vq_s.cs>=1).sum()),"private_used":[int((v.cs>=1).sum()) for v in net.vq_p],
