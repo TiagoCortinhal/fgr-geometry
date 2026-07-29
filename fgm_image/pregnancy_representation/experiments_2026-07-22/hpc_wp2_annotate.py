@@ -212,6 +212,8 @@ def main():
     ap.add_argument("--K",type=int,default=16); ap.add_argument("--per-plane",type=int,default=120)
     ap.add_argument("--n-perm",type=int,default=20000); ap.add_argument("--assign-only",action="store_true")
     ap.add_argument("--seed",type=int,default=0)
+    ap.add_argument("--cohort",default="impact",choices=["impact","clinical"],
+                    help="clinical routes through clinical_paths.resolve() (prefix-tolerant); outputs tagged _clin")
     a=ap.parse_args(); rng=np.random.default_rng(a.seed)
     res={"K":a.K,"per_plane_patches":a.per_plane,"n_perm":a.n_perm,
          "seed_ceiling_from_step1":SEED_CEILING,
@@ -227,7 +229,7 @@ def main():
         except Exception as ex: print(f"  {enc}: SKIP ({type(ex).__name__}: {ex})",flush=True)
     res["encoders_assigned"]=list(paths)
     if a.assign_only:
-        json.dump(res,open(os.path.join(OUTP,f"wp2_annotate_K{a.K}.json"),"w"),indent=2)
+        json.dump(res,open(os.path.join(OUTP,f"wp2_annotate_K{a.K}{'' if a.cohort=='impact' else '_clin'}.json"),"w"),indent=2)
         print("  ASSIGN ONLY -> stopping before the test",flush=True); return
 
     # axis + covariates
@@ -329,7 +331,7 @@ def main():
         res["headline"]={"strongest_code":best[0],**best[1]}
         print(f"\n  PRIMARY meta-analysis: strongest code {best[0]} pooled r={best[1]['pooled_r']:+.3f} "
               f"z={best[1]['z']:+.2f} (tau2={best[1]['tau2']:.4f})",flush=True)
-    json.dump(res,open(os.path.join(OUTP,f"wp2_annotate_K{a.K}.json"),"w"),indent=2,default=str)
+    json.dump(res,open(os.path.join(OUTP,f"wp2_annotate_K{a.K}{'' if a.cohort=='impact' else '_clin'}.json"),"w"),indent=2,default=str)
     print(f"saved out_probe/wp2_annotate_K{a.K}.json\nDONE",flush=True)
 
 if __name__=="__main__": main()
