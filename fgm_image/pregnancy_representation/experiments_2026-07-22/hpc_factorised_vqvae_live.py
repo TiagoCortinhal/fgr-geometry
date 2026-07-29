@@ -27,8 +27,16 @@ HERE=os.path.dirname(os.path.abspath(__file__))
 ROOT=os.path.abspath(os.path.join(HERE,"..","..",".."))
 OUT=os.environ.get("GA_OUT_DIR", os.path.join(HERE,"out_usfmae")); os.makedirs(OUT,exist_ok=True)
 OUTP=os.path.join(HERE,"out_probe"); os.makedirs(OUTP,exist_ok=True)
-IMG_DIR="/mnt/beegfs/groups/collage/data/IMPACT_FULL/processed/IMPACT_FULL/preprocessed"
-INDEX=os.path.join(HERE,"ga_cnn","ga_cnn_index.csv")
+# COHORT switch. IMPACT is a narrow late window (GA 26-39wk); the CLINICAL set spans GA
+# 6.2-41.6wk (544 fetuses) and is the cohort the pregnancy-representation thesis needs.
+# Both indices share columns: nid,new_filename,ga_weeks_recovered,plane_prop.
+COHORTS={
+ "impact":  (os.environ.get("IMPACT_IMG_DIR","/mnt/beegfs/groups/collage/data/IMPACT_FULL/processed/IMPACT_FULL/preprocessed"),
+             os.path.join(HERE,"ga_cnn","ga_cnn_index.csv")),
+ "clinical":(os.environ.get("CLINICAL_IMG_DIR","/mnt/beegfs/groups/collage/data/IMPACT_CLINICAL/processed/grouped/IMPACT_CLINICAL/preprocessed"),
+             os.path.join(HERE,"clinical_index.csv")),
+}
+IMG_DIR,INDEX=COHORTS["impact"]        # overridden in main() by --cohort
 WEIGHTS=os.path.join(ROOT,"FetalCLIP_weights.pt")
 DEV="cuda" if torch.cuda.is_available() else "cpu"
 CLIP_NORM=((0.48145466,0.4578275,0.40821073),(0.26862954,0.26130258,0.27577711))
@@ -114,15 +122,25 @@ def main():
     ap.add_argument("--K-shared",type=int,default=128); ap.add_argument("--K-private",type=int,default=64)
     ap.add_argument("--zs",type=int,default=64); ap.add_argument("--zp",type=int,default=32)
     ap.add_argument("--epochs",type=int,default=15); ap.add_argument("--bs",type=int,default=64); ap.add_argument("--lr",type=float,default=2e-3)
+    ap.add_argument("--cohort",default="impact",choices=["impact","clinical"])
     a=ap.parse_args()
-    df=frame_table(); vt=build_fetalclip()
+    global IMG_DIR,INDEX
+    IMG_DIR,INDEX=COHORTS[a.cohort]
+    df=frame_table()
+    if len(df)==0:
+        raise SystemExit(f"0 frames resolved for cohort={a.cohort} at {IMG_DIR}\n"
+                         f"  index={INDEX}\n  -> set {'CLINICAL_IMG_DIR' if a.cohort=='clinical' else 'IMPACT_IMG_DIR'} to the right dir")
+    print(f"cohort={a.cohort} | index={os.path.basename(INDEX)} | frames resolved {len(df)} | "
+          f"GA {df.ga_weeks_recovered.min():.1f}-{df.ga_weeks_recovered.max():.1f} SD {df.ga_weeks_recovered.std():.2f} | "
+          f"fetuses {df.nid.nunique()}",flush=True)
+    vt=build_fetalclip()
     nblk=len(vt.transformer.resblocks)
     sel=sorted(set(int(x) for x in np.linspace(1,nblk,min(a.n_layers,nblk)).round().astype(int)))
     x0=load_batch(df["img"].iloc[:2]).to(DEV); m0=clip_layer_maps(vt,x0,set(sel))
     Ls,Np,D=m0.shape[1],m0.shape[2],m0.shape[3]; g=int(round(Np**0.5))
     assert Ls%a.groups==0, f"{Ls} layers not divisible by {a.groups} groups"
     per=Ls//a.groups; Cg=per*D
-    tag=f"FetalCLIP_factVQ_L{Ls}g{a.groups}_Ks{a.K_shared}_Kp{a.K_private}"
+    tag=f"FetalCLIP_factVQ_{a.cohort}_L{Ls}g{a.groups}_Ks{a.K_shared}_Kp{a.K_private}"
     # BIT BUDGET: the flat single-codebook baseline is log2(K_flat) bits/patch. Factorised is
     # log2(K_shared) + ngroup*log2(K_private). Print both so the recon comparison is only made
     # against a bit-MATCHED baseline (extra capacity, not factorisation, can lower recon).
