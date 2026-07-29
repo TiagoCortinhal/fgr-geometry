@@ -3,7 +3,7 @@
 
 Motivation: single-code GA correlations were weak (|rho| 0.10-0.15), but that is a UNIVARIATE
 test of one visual word. The real question is which COMBINATION of codes carries gestational
-age, and how close that gets to the continuous full-embedding clock (r~0.435 on IMPACT).
+age, and how close that gets to the continuous full-embedding clock (FetalCLIP r=0.469 on IMPACT).
 
 STATISTICAL DISCIPLINE (the point of this script):
   * features  = per-image code-FREQUENCY histograms (fraction of the 256 patches per code),
@@ -144,8 +144,8 @@ def main():
         res["null_shuffled_GA"]={"all_codes_r":r_all_null,f"combo_r_k{max(sizes)}":rs_null[max(sizes)]}
         print(f"  NULL (shuffled GA): all-codes r={r_all_null:.3f} | combo k={max(sizes)} r={rs_null[max(sizes)]:.3f}",flush=True)
         allres[tag]=res
-    allres["reference"]={"full_embedding_clock_IMPACT_r":0.435,
-        "note":"IMPACT GA window is narrow (26-41wk); the clinical wide-GA FetalCLIP clock reached r=0.906 on 30257 clinical frames. Compare code-histogram r against the IMPACT 0.435 ceiling, NOT against 0.906."}
+    allres["reference"]={"full_embedding_FetalCLIP_clock_IMPACT_r":0.469,"other_encoders_IMPACT":{"USF-MAE":0.435,"DINOv2":0.425,"USFM":0.407},
+        "note":"These codes are FetalCLIP-derived, so the valid same-cohort ceiling is FetalCLIP-on-IMPACT r=0.469 (L18/24); 0.435 is USF-MAE from the same 4-encoder run. IMPACT GA window is narrow (26-41wk); the clinical wide-GA FetalCLIP clock reached r=0.906 on 30257 clinical frames (DIFFERENT cohort, not a ceiling here)."}
     p=os.path.join(OUTP,"code_combo_ga.json"); json.dump(allres,open(p,"w"),indent=2)
     print(f"\nsaved {p}",flush=True)
 

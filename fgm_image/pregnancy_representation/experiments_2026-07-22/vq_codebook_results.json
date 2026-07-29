@@ -121,7 +121,7 @@
       "NO compact subset carries GA: nested forward selection rises slowly and monotonically (1 code 0.125 -> 20 codes 0.271) and at k=20 is still well below all-320 (0.385). GA is genuinely DISTRIBUTED across the vocabulary, not concentrated in a few words.",
       "Selection is stable and non-random: the same features are chosen in 5/5 folds (6 of the top 8 are SHARED codes), and the GA-shuffle null is flat (all-codes r=-0.006, combo k=20 r=0.002) - so the selection procedure itself produces nothing by chance."
     ],
-    "corrects_earlier_framing": "An earlier reading called GA 'diffuse' based on single-code Spearman rho of 0.10-0.15. That was a UNIVARIATE statement only. Multivariately the codes carry GA well (0.385 of a 0.435 ceiling). The correct statement is: GA is distributed across many codes (no single code or small subset carries it) and concentrated in the depth-SHARED vocabulary rather than any single depth.",
+    "corrects_earlier_framing": "An earlier reading called GA 'diffuse' based on single-code Spearman rho of 0.10-0.15. That was a UNIVARIATE statement only. Multivariately the codes carry GA well (0.385 of a 0.469 FetalCLIP ceiling (82%)). The correct statement is: GA is distributed across many codes (no single code or small subset carries it) and concentrated in the depth-SHARED vocabulary rather than any single depth.",
     "caveats": [
       "IMPACT-only, GA 26-40.6wk (narrow). The distributed/shared conclusions are established on this window; the wide-GA clinical set was not run through this probe.",
       "Selection used an in-fold |corr| pre-screen capped at 64 candidates, so the k-subset curve is a greedy path, not the global optimum over all C(320,k) subsets - it bounds, not proves, subset performance.",
