@@ -286,6 +286,28 @@ def main():
             res["heap_separator_spatial_entropy"]={"KS_stat":float(ks.statistic),"p":float(ks.pvalue),
               "distinguishable_at_0.01":bool(ks.pvalue<0.01),
               "trained_median":float(np.median(ent["trained"])),"random_median":float(np.median(ent["random"]))}
+        print(f"\n  SEED REPLICATION: {n_rep} of {M} features at cosine >= 0.7 "
+              f"(median matched cosine {np.median(rep):.3f}) | kill threshold <{KILL['min_replicated']}",flush=True)
+        print(f"  replication curve: "
+              +" ".join(f">={t}:{int((rep>=t).sum())}" for t in (0.5,0.6,0.7,0.8,0.9)),flush=True)
+        for arm in got: print(f"  alive fraction [{arm}]: {float(got[arm]['alive']):.3f}",flush=True)
+        if "heap_separator_spatial_entropy" in res:
+            h=res["heap_separator_spatial_entropy"]
+            print(f"  Heap separator (spatial entropy) KS={h['KS_stat']:.3f} p={h['p']:.2e} "
+                  f"trained median {h['trained_median']:.3f} vs random {h['random_median']:.3f}",flush=True)
+        # ULTRA-SPARSE fraction -- 'alive' (fires>0 ever) is near-vacuous at k=16 over 1M rows, where
+        # each feature fires ~3900 times by chance. The plan asked for this and it was missing.
+        for arm in got:
+            if "prof_max_s0" in got[arm]:
+                P=got[arm]["prof_max_s0"]; rate=(P>0).mean(0)
+                res.setdefault("activation_rates",{})[arm]={
+                    "frac_features_firing_lt_0.1pct_of_frames":float((rate<0.001).mean()),
+                    "frac_lt_1pct":float((rate<0.01).mean()),"median_rate":float(np.median(rate)),
+                    "effective_dictionary_at_1pct":int((rate>=0.01).sum())}
+                a_=res["activation_rates"][arm]
+                print(f"  activation rates [{arm}]: median {a_['median_rate']:.4f} | "
+                      f"ultra-sparse(<0.1% frames) {a_['frac_features_firing_lt_0.1pct_of_frames']:.3f} | "
+                      f"EFFECTIVE dict at >=1% = {a_['effective_dictionary_at_1pct']} of {M}",flush=True)
         verdicts=[]
         if n_rep<KILL["min_replicated"]: verdicts.append(f"KILL 1: only {n_rep} features replicate across 3 seeds (<{KILL['min_replicated']})")
         if res["alive_fraction"].get("trained",1)<KILL["min_alive_frac"]: verdicts.append("KILL 4: alive fraction below 0.25")
