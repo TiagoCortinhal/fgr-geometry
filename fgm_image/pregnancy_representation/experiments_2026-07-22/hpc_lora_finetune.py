@@ -148,6 +148,27 @@ class AdaptedFetalCLIP(nn.Module):
     def forward(s,x):
         z=s.embed(x); return s.head_ga(z), s.head_dop(z), z
 
+def masked_target_loss(pred,targ,mask,per_target_sd):
+    """MASKED multi-task loss: each fetus contributes to the targets it actually HAS.
+
+    WHY NOT COMPLETE-CASE, and why not imputation. Coverage is 87.2% complete (864 of 991 have all 5
+    Doppler targets; 111 have 4, 11 have 3, only 2 have none), so this is sparse missingness rather than
+    a coverage problem -- BUT it is not random: complete cases have an SGA rate of 0.180 versus 0.111 for
+    incomplete ones. Dropping incomplete fetuses would therefore ENRICH the training set for SGA, and
+    SGA is an evaluation-only endpoint in this project, so that enrichment would quietly couple training
+    composition to the thing we later evaluate. Imputing Doppler values is worse: it would invent
+    measurements the sonographer did not take, and the model would learn the imputer.
+
+    So: mask. Every fetus trains on whatever it has. Two details that matter --
+      (a) each target is divided by its OWN training-fold SD before the loss, else a target with larger
+          natural scale silently dominates the gradient;
+      (b) the loss is normalised by the NUMBER OF OBSERVED entries, not by the tensor size, so a batch
+          that happens to contain many missing values does not get a smaller gradient step.
+    """
+    if mask.sum()==0: return pred.sum()*0.0
+    w=(targ-pred)/per_target_sd
+    return (w.pow(2)*mask).sum()/mask.sum()
+
 def soft_bins(ga,centres,sigma):
     """GA as a distributional target: Gaussian soft labels with sigma = dating error, read out as the
     expectation. The regression analogue of label smoothing -- it stops the model being punished for
@@ -195,6 +216,12 @@ def main():
             "(PC1=77%) vs 3.51 for GA+4 Doppler-z; and training on biometry makes 'does the adapted "
             "representation carry anything biometry does not' unaskable"),
          "ua_target":"REPAIRED internal-reference z (shipped Zscore_AU is a GA-indexed mislabel)",
+         "missing_target_handling":("MASKED per-target loss -- every fetus trains on the targets it has. "
+            "Coverage 87.2% complete (864/991 all five; 111 have four; 11 have three; 2 have none). NOT "
+            "complete-case: complete cases have SGA rate 0.180 vs 0.111 incomplete, so dropping would "
+            "enrich training for an evaluation-only endpoint. NOT imputed: that would invent "
+            "measurements and the model would learn the imputer. Loss normalised by observed-entry "
+            "count and each target scaled by its own training-fold SD."),
          "dating_pregate":"CLEARED -- CRL n=3215 median 65mm (11-16wk) + LMP n=3370; not 2nd-trimester biometry",
          "n_fetuses":int(nfet),"n_frames":int(len(df))}
     print(f"  trainable {ntr:,} of {res['backbone_params']:,} "
