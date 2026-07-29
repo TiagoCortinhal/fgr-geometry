@@ -94,9 +94,15 @@ def main():
         band=shuffled_floor(S,"sample",a.n_perm,rng)
         p5,p50,p95=np.percentile(band,[5,50,95])
         excess=obs_s-p95
-        if obs_s<=p95: verdict="NO shared structure -- observed inside the shuffle floor band"
-        elif obs_s < floor_analytic+0.10: verdict="WEAK -- above the band but within 0.10 of the 1/E floor; do not build on it"
-        else: verdict="REAL shared structure -- above both the 1/E floor and the shuffle band"
+        # verdict needs BOTH a beat over the band AND a minimum effect size. A bare '>p95' gate is
+        # too weak when the band is this tight (it can be cleared by <0.001 of rounding), which is
+        # exactly what happened on the first real run: obs 0.334 vs p95 0.334, excess +0.000, and
+        # the old logic mislabelled a dead-flat null as "WEAK -- above the band".
+        MIN_EXCESS=0.02
+        if excess < MIN_EXCESS: verdict=(f"NO shared structure -- excess over the shuffle band ({excess:+.3f}) is below the "
+                                        f"minimum effect size {MIN_EXCESS}; the shared component carries the arithmetic 1/E floor and nothing more")
+        elif obs_s < floor_analytic+0.10: verdict="WEAK -- clears the band but within 0.10 of the 1/E floor; do not build on it"
+        else: verdict="REAL shared structure -- above both the 1/E floor and the shuffle band by a material margin"
         streams=[str(x) for x in z["encoders"]] if "encoders" in z.files else [f"stream{i}" for i in range(E)]
         res[tag]={"E":int(E),"streams":streams,"K_private":Kp,
                   "observed_shared_fraction":float(obs_s),"observed_private_fraction":float(obs_p),

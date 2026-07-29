@@ -131,5 +131,129 @@
     "corrections": [
       "Ceiling corrected 0.435 -> 0.469: 0.435 was USF-MAE, not FetalCLIP. The codes are FetalCLIP-derived, so retained fraction is 82.1% (not the 88.5% previously stated)."
     ]
+  },
+  "topic_latent_bag_of_visual_words": {
+    "script": "hpc_code_topic_latent.py",
+    "source_codes": "factvq_codes_FetalCLIP_factVQ_L12g3_Ks128_Kp64.npz",
+    "cohort": "IMPACT",
+    "n_frames": 20413,
+    "n_fetuses": 908,
+    "GA_range_wk": [
+      26.0,
+      39.3
+    ],
+    "baselines_UNIT_MATCHED": {
+      "raw_histogram_FRAME_level_GA_r": 0.385,
+      "raw_histogram_FETUS_level_GA_r": 0.615,
+      "note": "Topics are fitted/scored per FETUS, so 0.615 is the valid ceiling for them. 0.385 is the only value comparable to the FRAME-level FetalCLIP full-embedding clock r=0.469 (0.385/0.469 = 82%). An earlier run compared fetus-level topic r to the frame-level 0.385 and to 0.469 - both invalid."
+    },
+    "per_rank": {
+      "4": {
+        "GA_r_NMF": 0.368,
+        "GA_r_FA": 0.388,
+        "pct_of_fetus_ceiling_FA": 63.1,
+        "silhouette_k2": 0.296,
+        "max_plane_eta2": 0.49,
+        "null_matched_capacity_shuffled_hist": -0.113,
+        "null_GA_shuffle": 0.012,
+        "nmf_n_iter": 338,
+        "nmf_converged": true
+      },
+      "6": {
+        "GA_r_NMF": 0.38,
+        "GA_r_FA": 0.386,
+        "pct_of_fetus_ceiling_FA": 62.8,
+        "silhouette_k2": 0.222,
+        "max_plane_eta2": 0.34,
+        "null_matched_capacity_shuffled_hist": -0.032,
+        "null_GA_shuffle": 0.003,
+        "nmf_n_iter": 370,
+        "nmf_converged": true
+      },
+      "8": {
+        "GA_r_NMF": 0.379,
+        "GA_r_FA": 0.38,
+        "pct_of_fetus_ceiling_FA": 61.8,
+        "silhouette_k2": 0.174,
+        "max_plane_eta2": 0.37,
+        "null_matched_capacity_shuffled_hist": -0.064,
+        "null_GA_shuffle": 0.013,
+        "nmf_n_iter": 1395,
+        "nmf_converged": true
+      },
+      "12": {
+        "GA_r_NMF": 0.408,
+        "GA_r_FA": 0.458,
+        "pct_of_fetus_ceiling_FA": 74.5,
+        "silhouette_k2": 0.138,
+        "max_plane_eta2": 0.71,
+        "null_matched_capacity_shuffled_hist": -0.08,
+        "null_GA_shuffle": -0.012,
+        "nmf_n_iter": 1718,
+        "nmf_converged": true
+      },
+      "20": {
+        "GA_r_NMF": 0.433,
+        "GA_r_FA": 0.478,
+        "pct_of_fetus_ceiling_FA": 77.7,
+        "silhouette_k2": 0.177,
+        "max_plane_eta2": 0.78,
+        "null_matched_capacity_shuffled_hist": -0.073,
+        "null_GA_shuffle": 0.029,
+        "nmf_n_iter": 829,
+        "nmf_converged": true
+      },
+      "32": {
+        "GA_r_NMF": 0.577,
+        "GA_r_FA": 0.609,
+        "pct_of_fetus_ceiling_FA": 99.0,
+        "silhouette_k2": 0.167,
+        "max_plane_eta2": 0.72,
+        "null_matched_capacity_shuffled_hist": -0.04,
+        "null_GA_shuffle": -0.012,
+        "nmf_n_iter": 5226,
+        "nmf_converged": true
+      }
+    },
+    "findings": [
+      "UNIT-MATCHED verdict: topics do NOT beat the raw code histogram. The per-fetus histogram ceiling is r=0.615; the best topic latent (FA, R=32) reaches 0.609 = 99% of it, and every rank below 32 is at 60-78%. Factorising the histogram into topics COSTS GA information at low rank and only recovers it by using enough factors to approximate the full histogram.",
+      "The apparent 'topics beat the histogram' reading in the first run was a UNIT ARTEFACT: fetus-level topic r (0.424/0.458) was compared to the FRAME-level histogram r (0.385). Per-fetus mean pooling suppresses noise and mechanically raises r; the correct fetus-level baseline is 0.615.",
+      "GA r is NOT monotone in rank (0.368/0.380/0.379/0.408/0.433/0.577) but rises steeply at R=32 while plateauing 4-8. R=32 is the largest rank tried and its NMF needed 5226 iterations - the gain looks like capacity approaching the full 320-d histogram, not a discovered low-dimensional maturation structure.",
+      "Both nulls pass at every rank: matched-capacity shuffled-histogram NMF gives NEGATIVE r (-0.03 to -0.11) and GA-shuffle gives ~0.00 (max |0.029|). The structure that IS there is real, not capacity artefact.",
+      "The latent is a CONTINUUM: silhouette k=2 is 0.13-0.30 at every rank, and does not improve with rank. Replicates the continuum finding of every prior family in this project (GBTM dip-unimodal, HDBSCAN all-noise, unsupervised beta-TCVAE overlay).",
+      "PLANE dominates and grows with rank: max topic plane eta2 rises 0.49 -> 0.78 as rank increases. Extra factors are largely spent encoding imaging plane, not maturation - i.e. the vocabulary's leading structure is acquisition geometry.",
+      "Topic composition is dominated by SHARED codes (top-5 loadings are mostly shared#*), consistent with the earlier finding that GA lives in the depth-shared vocabulary (shared-alone r=0.374 vs all-320 0.385 at frame level).",
+      "Two topics are reproducible across every rank: a positive-GA topic led by shared#49/#109/#95/#17 (mono +0.31..+0.39) and a negative-GA topic led by shared#7/#5/#56 (mono -0.21..-0.36). These are the closest thing to interpretable maturation axes here, but |mono| never exceeds 0.39."
+    ],
+    "caveats": [
+      "OUTCOME READ-OFFS STILL NOT RUN: impact_outcomes.csv is absent on the HPC at both searched paths (exists=False). No SGA/LGA/birth-percentile anchor has been evaluated on this latent.",
+      "NMF converged at every rank under the raised 8000-iteration cap, but R=32 needed 5226 iterations - near the practical limit; its loadings are the least stable of the set.",
+      "IMPACT-only, GA 26.0-39.3wk. A 'maturation vocabulary' cannot be properly tested in a 13-week late window; the clinical cohort (30257 frames, 544 fetuses, GA 6.2-41.6wk, SD 6.92) is the correct substrate and has NOT been run.",
+      "plane_prop is kNN-propagated and was audited unreliable on the clinical set (3 of 6 wrong at conf=1.00), so the plane eta2 magnitudes carry label noise (which would DEFLATE, not inflate, measured plane structure)."
+    ],
+    "verdict": "NEGATIVE for the topic latent as an improvement: bag-of-visual-words factorisation does not organise GA better than the raw code histogram it is built from, and the extra factors mostly encode imaging plane. The codes remain a usable scan representation (82% of the frame-level FetalCLIP clock), but NMF topics are not the way to add value on top of them."
+  },
+  "shared_private_factorisation_RETRACTED": {
+    "status": "RETRACTED / SETTLED NULL",
+    "floor_test": {
+      "script": "hpc_shared_floor.py",
+      "source": "factvq_codes_FetalCLIP_factVQ_L12g3_Ks128_Kp64.npz",
+      "E": 3,
+      "rows_used": 200000,
+      "rows_total": 5225728,
+      "observed_shared_fraction": 0.334,
+      "analytic_1overE_floor": 0.333,
+      "shuffle_floor_band": {
+        "p5": 0.333,
+        "median": 0.333,
+        "p95": 0.334,
+        "n_perm": 200
+      },
+      "excess_over_band_p95": 0.0
+    },
+    "what_it_retracts": "The depth-factorised result previously reported here and to the user -- FULL recon 0.298 vs SHARED-ONLY 0.830, framed as 'private adds +0.53, depth-specific content dominates' -- is WITHDRAWN as a finding. shared was defined as the arithmetic MEAN over E=3 depth groups, and the mean of E independent streams carries exactly 1/E of the variance regardless of whether anything is truly shared. The observed shared fraction (0.334) equals the analytic floor (0.333) and sits inside the 200-permutation shuffle band [0.333,0.334], excess +0.000. The +0.53 'private gain' was an arithmetic identity of the mean+residual construction, not evidence about depth-specific content.",
+    "also_applies_to": "The cross-encoder version of the same design (E=4 encoders, floor 0.250) must NOT be relaunched on this construction -- it would reproduce the same identity at 0.250. The run was stopped.",
+    "verdict_label_bug": "The script's first-run label said 'WEAK -- above the band' because obs beat p95 by <0.001 of rounding. A bare '>p95' gate is too weak when the band is this tight; fixed to require excess >= 0.02 minimum effect size as well as clearing the band. Correct label for this run: NO shared structure.",
+    "what_survives": "Nothing about shared-vs-private. The codebook results that do NOT depend on this construction are unaffected: flat K=256 VQ recon 0.366 with 256/256 codes alive; code histogram retains held-out GA r=0.385 at frame level (82% of the FetalCLIP 0.469 ceiling) and 0.615 per-fetus; GA distributed not compact; 95% of GA r survives regressing plane out; NMF topics null; continuum not clusters."
   }
 }
