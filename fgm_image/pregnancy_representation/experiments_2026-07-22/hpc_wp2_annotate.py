@@ -190,8 +190,8 @@ def histograms(npz,K,per_plane,rng):
 
 def main():
     ap=argparse.ArgumentParser()
-    ap.add_argument("--K",type=int,default=16); ap.add_argument("--per-plane",type=int,default=40)
-    ap.add_argument("--n-perm",type=int,default=2000); ap.add_argument("--assign-only",action="store_true")
+    ap.add_argument("--K",type=int,default=16); ap.add_argument("--per-plane",type=int,default=120)
+    ap.add_argument("--n-perm",type=int,default=20000); ap.add_argument("--assign-only",action="store_true")
     ap.add_argument("--seed",type=int,default=0)
     a=ap.parse_args(); rng=np.random.default_rng(a.seed)
     res={"K":a.K,"per_plane_patches":a.per_plane,"n_perm":a.n_perm,
@@ -235,24 +235,48 @@ def main():
             if not alive[k]: continue
             r_raw,p_raw,n=partial_spearman(Praw[:,k],y,C)
             r_clr,p_clr,_=partial_spearman(Pclr[:,k],y,C)
-            # D1 stratified conditional permutation
-            null=np.array([partial_spearman(Praw[:,k],strat_perm(y,strata,rng),C)[0] for _ in range(min(a.n_perm,500))])
-            p_perm=float((np.abs(null)>=abs(r_raw)).mean()) if np.isfinite(r_raw) else np.nan
+            # D1 stratified conditional permutation.
+            # RESOLUTION: p is reported with the +1 correction, so the FLOOR is 1/(n_perm+1) and a
+            # zero can never be printed. The earlier run capped perms at 500 and printed q_BY=0.0000,
+            # which actually meant p<0.002 -- misleading. n_perm now runs in full (>=20000 is what
+            # the project's multiplicity ledger requires to resolve alpha=8.6e-5).
+            null=np.array([partial_spearman(Praw[:,k],strat_perm(y,strata,rng),C)[0] for _ in range(a.n_perm)])
+            p_perm=float((1+np.sum(np.abs(null)>=abs(r_raw)))/(a.n_perm+1)) if np.isfinite(r_raw) else np.nan
+            p_floor=1.0/(a.n_perm+1)
             rows.append({"code":k,"usage":float(usage[k]),"r_raw":r_raw,"p_raw":p_raw,
-                         "r_clr":r_clr,"p_clr":p_clr,"p_stratperm":p_perm,"n":n,
+                         "r_clr":r_clr,"p_clr":p_clr,"p_stratperm":p_perm,"p_perm_floor":p_floor,"n":n,
                          "closure_floor":float(-r_raw/(a.K-1)) if np.isfinite(r_raw) else None})
         q=by_correct([r["p_stratperm"] for r in rows])
         for r_,qq in zip(rows,q): r_["q_BY"]=float(qq)
-        # Stage E calibration: same pipeline, target = sex
+        # Stage E calibration -- TWO controls, because the sex gate alone proved too weak.
+        # SEX: adjusted for GA. Known small real effect on size (~2-3%), so a small |r| here is
+        #      expected and does NOT by itself establish that the pipeline works.
+        # GA: the PROPERLY POWERED positive control, added after the first run showed sex
+        #     max|r| 0.045-0.064. Declared as an ADDITION, not a substitution: the per-fetus code
+        #     histogram is already known to carry GA at r~0.615, so if this pipeline cannot recover
+        #     GA the pipeline is BROKEN and no null from it counts. If it DOES recover GA, then sex
+        #     is simply a weak calibrator and the WP2 null is interpretable.
         cal=[partial_spearman(Praw[:,k],sex,np.column_stack([ga_spline(gav)]))[0] for k in range(a.K) if alive[k]]
+        ga_ctrl=[partial_spearman(Praw[:,k],gav,np.column_stack([sex]))[0] for k in range(a.K) if alive[k]]
+        from sklearn.linear_model import RidgeCV
+        from sklearn.model_selection import cross_val_predict, GroupKFold
+        mg=np.isfinite(gav)
+        pred=cross_val_predict(RidgeCV(alphas=np.logspace(-2,3,20)),Praw[mg],gav[mg],
+                               cv=GroupKFold(5),groups=fet[mg])
+        ga_multi=float(spearmanr(pred,gav[mg]).statistic)
         per_enc[enc]={"n_fetuses":int(len(fet)),"dropped_no_plane":int(dropped),"K_eff":Keff,
                       "codes":rows,"max_abs_r":float(np.nanmax([abs(r_["r_raw"]) for r_ in rows])),
                       "min_q_BY":float(np.nanmin(q)) if len(q) else None,
-                      "calibration_sex_max_abs_r":float(np.nanmax(np.abs(cal))) if cal else None}
+                      "calibration_sex_max_abs_r":float(np.nanmax(np.abs(cal))) if cal else None,
+                      "POSITIVE_CONTROL_ga_percode_max_abs_r":float(np.nanmax(np.abs(ga_ctrl))) if ga_ctrl else None,
+                      "POSITIVE_CONTROL_ga_multivariate_r":ga_multi,
+                      "positive_control_verdict":("PIPELINE WORKS -- recovers GA multivariately" if ga_multi>0.35
+                          else "PIPELINE SUSPECT -- cannot recover GA, so no null from it is interpretable")}
         eff[enc]={r_["code"]:r_["r_raw"] for r_ in rows}
         print(f"  [{enc}] n={len(fet)} K_eff={Keff} | max|r| vs WP2 axis {per_enc[enc]['max_abs_r']:.3f} "
-              f"| min q_BY {per_enc[enc]['min_q_BY']:.4f} | SEX calibration max|r| "
-              f"{per_enc[enc]['calibration_sex_max_abs_r']:.3f}",flush=True)
+              f"| min q_BY {per_enc[enc]['min_q_BY']:.4f}\n           SEX cal max|r| "
+              f"{per_enc[enc]['calibration_sex_max_abs_r']:.3f} | GA POSITIVE CONTROL multivariate r "
+              f"{ga_multi:+.3f} percode max|r| {max(abs(x) for x in ga_ctrl):.3f} -> {per_enc[enc]['positive_control_verdict']}",flush=True)
     res["per_encoder"]=per_enc
 
     # PRIMARY: random-effects meta-analysis per code across encoders (DerSimonian-Laird)
@@ -261,11 +285,24 @@ def main():
     for k in common:
         e=np.array([eff[x][k] for x in eff if np.isfinite(eff[x].get(k,np.nan))])
         n=np.mean([per_enc[x]["n_fetuses"] for x in eff]); se=1.0/np.sqrt(max(n-3,1))
+        # BUGFIX: w2 must be a PER-STUDY ARRAY. When it was the scalar 1/(se^2+tau2), w2.sum()
+        # returned w2 itself, so pooled=(w2*e).sum()/w2 collapsed to SUM(e) -- roughly 4x the true
+        # weighted mean at E=4 -- and se_p became a single-study se. That is what produced the
+        # impossible pooled_r=-0.229 (larger than every per-encoder input, max 0.107) with z=-6.88.
+        # Guard below asserts the pooled estimate lies within the range of its inputs.
         w=np.ones(len(e))/se**2; fixed=float((w*e).sum()/w.sum())
-        Q=float((w*(e-fixed)**2).sum()); tau2=max(0.0,(Q-(len(e)-1))/(w.sum()-(w**2).sum()/w.sum()))
-        w2=1.0/(se**2+tau2); pooled=float((w2*e).sum()/w2.sum()); se_p=float(np.sqrt(1/w2.sum()))
+        Q=float((w*(e-fixed)**2).sum())
+        denom=w.sum()-(w**2).sum()/w.sum()
+        tau2=max(0.0,(Q-(len(e)-1))/denom) if denom>0 else 0.0
+        w2=np.ones(len(e))/(se**2+tau2)                      # PER-STUDY weights (was a scalar)
+        pooled=float((w2*e).sum()/w2.sum()); se_p=float(np.sqrt(1.0/w2.sum()))
+        assert e.min()-1e-9 <= pooled <= e.max()+1e-9, (
+            f"pooled {pooled} outside input range [{e.min()},{e.max()}] -- weighted mean cannot "
+            "exceed its inputs; the weights are wrong")
         meta[int(k)]={"pooled_r":pooled,"se":se_p,"z":pooled/se_p if se_p>0 else np.nan,
                       "tau2":tau2,"Q":Q,"n_encoders":int(len(e)),
+                      "per_encoder_r":[float(v) for v in e],
+                      "input_range":[float(e.min()),float(e.max())],
                       "replication_descriptor":int(np.sum(np.abs(e)>0.10))}
     res["meta_analysis_PRIMARY"]=meta
     if meta:
