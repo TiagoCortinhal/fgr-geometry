@@ -227,11 +227,77 @@ def stream_profiles(df,arm,sae,mu,sd,npatch,seed=0):
     return (mx,mn,-(pos*np.log(pos+1e-12)).sum(0),cen,disp,
             (topq/max(nfr,1)).cpu().numpy().astype(np.float32))
 
+
+def fit_sae(X,seed,epochs=EPOCHS,bs=8192,lr=3e-4,m=None):
+    """Fit the TopK SAE. X is the already-subsampled fp16 CPU tensor from fit_subsample(); batches
+    are cast to float32 on device so training stays full precision.
+
+    m OVERRIDES the dictionary size EXPLICITLY. TopKSAE's default argument m=M was captured at
+    DEFINITION time, so mutating the global M did nothing and the first M-sweep draft would have
+    silently fit M=4096 three times while reporting three different sizes. An assertion on
+    W_dec's shape now catches that class of error."""
+    sae=TopKSAE(X.shape[1],m=m or M,seed=seed).to(DEV)
+    opt=torch.optim.Adam(sae.parameters(),lr=lr)
+    n=X.shape[0]; g=torch.Generator().manual_seed(seed)
+    for ep in range(epochs):
+        perm=torch.randperm(n,generator=g); tot=0.0; sae.fires.zero_()
+        for a in range(0,n,bs):
+            xb=X[perm[a:a+bs]].to(DEV).float()
+            xh,act,idx=sae(xb)
+            loss=(xh-xb).pow(2).mean()+(1/32)*sae.aux(xb,xh,act)
+            opt.zero_grad(); loss.backward(); opt.step()
+            with torch.no_grad(): sae.fires.scatter_add_(0,idx.reshape(-1),torch.ones(idx.numel(),device=DEV))
+            tot+=loss.item()*len(xb)
+        alive=float((sae.fires>0).float().mean())
+        print(f"      seed{seed} ep{ep} loss {tot/n:.4f} alive {alive:.3f}",flush=True)
+    return sae
+
+def m_sweep(df,arm,Ms=(256,1024,4096),seeds=3,seed_fit=0):
+    """SEED-STABILITY SWEEP over dictionary size M. Fitting only -- no profiles, no GA, no outcome.
+
+    WHY. At M=4096 the dictionary is NOT identifiable on this cohort: median matched cosine across
+    seeds 0.098, only 8.4% of features at cosine>=0.7 and 0.32% at >=0.9, while all three seeds landed
+    on the same loss to four decimals (0.2187/0.2186/0.2190). Many different decompositions reconstruct
+    equally well and initialisation picks arbitrarily. For contrast the K=16 VQ codebook on the SAME
+    encoders reached across-seed AMI 0.710-0.797. So the question is not 'is the SAE interpretable'
+    but 'at what dictionary size does it become IDENTIFIABLE at all'.
+
+    Note the earlier kill bar ('fewer than 10 features replicate') was miscalibrated -- 10 of 4096 is
+    0.24% and cannot realistically fail. The bar used here is the MEDIAN matched cosine plus the
+    fraction at >=0.7, which describe the typical feature rather than the best few.
+
+    Stability is measured on DECODER DIRECTIONS (what an SAE feature IS: a direction in the encoder's
+    activation space), greedily matched across seeds by cosine, min over seed pairs. That needs no
+    per-frame profiles, so this is fitting cost only."""
+    import itertools
+    Xf,mu,sd,npatch=fit_subsample(df,arm,seed=seed_fit)
+    out={}
+    for m in Ms:
+        Ws=[]
+        for sN in range(seeds):
+            sae=fit_sae(Xf,seed=sN,m=m)                     # m passed EXPLICITLY, no global mutation
+            assert sae.W_dec.shape[1]==m, f"dictionary size not honoured: {sae.W_dec.shape}"
+            W=sae.W_dec.detach().T                          # (m, d) one row per feature direction
+            Ws.append((W/ (W.norm(dim=1,keepdim=True)+1e-9)).cpu())
+            del sae
+        best=[]
+        for i,j in itertools.combinations(range(seeds),2):
+            C=(Ws[i]@Ws[j].T).abs()                          # abs: sign of a direction is arbitrary
+            best.append(C.max(1).values.numpy())
+        rep=np.min(best,axis=0)
+        out[m]={"median_matched_cosine":float(np.median(rep)),
+                "frac_ge_0.7":float((rep>=0.7).mean()),"frac_ge_0.9":float((rep>=0.9).mean()),
+                "n_ge_0.7":int((rep>=0.7).sum()),"M":m}
+        print(f"  M={m:5d}: median matched cosine {np.median(rep):.3f} | "
+              f">=0.7 {(rep>=0.7).mean():.3f} ({int((rep>=0.7).sum())}/{m}) | >=0.9 {(rep>=0.9).mean():.3f}",flush=True)
+    return out
+
 def main():
     ap=argparse.ArgumentParser()
     ap.add_argument("--arm",default="trained",choices=["trained","random","shuffled"])
     ap.add_argument("--check",action="store_true"); ap.add_argument("--compare",action="store_true")
     ap.add_argument("--clock",action="store_true",help="GA clock / MAE at frame vs study vs fetus aggregation")
+    ap.add_argument("--m-sweep",action="store_true",help="seed-stability vs dictionary size M (fitting only)")
     ap.add_argument("--frames",type=int,default=0,help="0 = all")
     a=ap.parse_args()
     df=frame_table()
@@ -317,6 +383,22 @@ def main():
         for v in res["VERDICT"]: print("  "+v,flush=True)
         json.dump(res,open(os.path.join(OUTP,"sae_compare.json"),"w"),indent=2,default=str)
         print("saved out_probe/sae_compare.json\nDONE",flush=True); return
+
+    if a.m_sweep:
+        sw=m_sweep(df,a.arm)
+        res["m_sweep"]=sw
+        vals=[(m,v["median_matched_cosine"]) for m,v in sw.items()]
+        best=max(vals,key=lambda t:t[1])
+        res["verdict"]=(f"most identifiable at M={best[0]} (median matched cosine {best[1]:.3f}). "
+            +("stability RISES as M falls, so the M=4096 instability is a capacity/identifiability "
+              "problem and the smaller M is the defensible grid point."
+              if best[0]==min(sw) else
+              "stability does NOT improve at smaller M, so the dictionary is not identifiable at any "
+              "size tried on this cohort -- the SAE track dies on stability alone, which is itself a "
+              "reportable negative given how rarely this control is run."))
+        print("\n  "+res["verdict"],flush=True)
+        json.dump(res,open(os.path.join(OUTP,f"sae_msweep_{a.arm}.json"),"w"),indent=2,default=str)
+        print(f"saved out_probe/sae_msweep_{a.arm}.json\nDONE",flush=True); return
 
     if a.clock:
         # ---------------- GA CLOCK / MAE EVALUATION ----------------
