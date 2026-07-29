@@ -78,6 +78,7 @@ OUTP=os.path.join(HERE,"out_probe"); os.makedirs(OUTP,exist_ok=True)
 DEV="cuda" if torch.cuda.is_available() else "cpu"
 LAYER=18-1          # L18 of 24, 0-indexed; FetalCLIP's best layer for the GA clock (r=0.469)
 M=4096; TOPK=16; SEEDS=3; BATCH=32; EPOCHS=4
+FIT_ROWS=1_000_000   # rows used to FIT (244 per dictionary element); assignment stays full-cohort
 NAMING_BAR={"95":0.145,"99":0.155}      # label-permutation max-statistic at n=908, M=4096
 KILL={"min_replicated":10,"min_gap":0.05,"min_alive_frac":0.25}
 from hpc_extract_4encoders import BUILDERS, frame_table
@@ -131,8 +132,15 @@ def rerandomise(model,seed=0):
     return model
 
 @torch.no_grad()
-def tokens_for(df,arm,seed=0,enc="FetalCLIP"):
-    """patch tokens at L18, per-dim standardised then per-FRAME mean subtracted."""
+def tokens_for(df,arm,seed=0,enc="FetalCLIP",fit_rows=0):
+    """patch tokens at L18, per-FRAME mean subtracted then per-dim standardised.
+
+    MEMORY. All 5.2M patch rows x 1024-d is 21.4 GB in float32, and torch.cat plus a
+    standardisation copy pushed the peak to 43-64 GB -- fatal. Fixes: accumulate in FLOAT16
+    (10.7 GB), standardise IN PLACE (no copy), and optionally keep only a random subsample of rows
+    for FITTING (fit_rows). A 4x-overcomplete M=4096 dictionary does not need 5.2M rows: 1M rows is
+    244 per dictionary element. ASSIGNMENT still runs over all frames in chunks, so the per-frame
+    profiles remain full-cohort."""
     m,tf,_=BUILDERS[enc]()
     if arm=="random": m=rerandomise(m,seed=seed)
     feats=[]; t0=time.time()
@@ -144,20 +152,28 @@ def tokens_for(df,arm,seed=0,enc="FetalCLIP"):
             idx=torch.argsort(torch.rand(t.shape[0],t.shape[1],device=t.device),dim=1)
             t=torch.gather(t,1,idx.unsqueeze(-1).expand_as(t))
         t=t-t.mean(1,keepdim=True)                            # per-frame token mean (drift term)
-        feats.append(t.reshape(-1,t.shape[-1]).float().cpu())
-        if (b0//BATCH)%50==0: print(f"    {arm} tokens {b0}/{len(df)} {time.time()-t0:.0f}s",flush=True)
+        feats.append(t.reshape(-1,t.shape[-1]).half().cpu())      # fp16: 21.4GB -> 10.7GB
+        if (b0//BATCH)%50==0:
+            print(f"    {arm} tokens {b0}/{len(df)} {time.time()-t0:.0f}s "
+                  f"({sum(f.numel() for f in feats)*2/1e9:.1f}GB held)",flush=True)
     del m; torch.cuda.empty_cache() if DEV=="cuda" else None
-    X=torch.cat(feats)
-    return ((X-X.mean(0))/(X.std(0)+1e-6))
+    X=torch.cat(feats); feats.clear()
+    mu=X.float().mean(0); sd=X.float().std(0)+1e-6
+    X.sub_(mu.half()).div_(sd.half())                             # IN PLACE, no copy
+    return X
 
-def fit_sae(X,seed,epochs=EPOCHS,bs=8192,lr=3e-4):
+def fit_sae(X,seed,epochs=EPOCHS,bs=8192,lr=3e-4,fit_rows=FIT_ROWS):
+    """X may be fp16 on CPU; batches are cast to float32 on device. Fits on at most fit_rows."""
+    if fit_rows and X.shape[0]>fit_rows:
+        idx=torch.randperm(X.shape[0],generator=torch.Generator().manual_seed(0))[:fit_rows]
+        X=X[idx]
     sae=TopKSAE(X.shape[1],seed=seed).to(DEV)
     opt=torch.optim.Adam(sae.parameters(),lr=lr)
     n=X.shape[0]; g=torch.Generator().manual_seed(seed)
     for ep in range(epochs):
         perm=torch.randperm(n,generator=g); tot=0.0; sae.fires.zero_()
         for a in range(0,n,bs):
-            xb=X[perm[a:a+bs]].to(DEV)
+            xb=X[perm[a:a+bs]].to(DEV).float()
             xh,act,idx=sae(xb)
             loss=(xh-xb).pow(2).mean()+ (1/32)*sae.aux(xb,xh,act)
             opt.zero_grad(); loss.backward(); opt.step()
@@ -173,7 +189,7 @@ def frame_profiles(sae,X,n_frames,npatch):
     mx=torch.zeros(n_frames,M); mn=torch.zeros(n_frames,M)
     for f in range(0,n_frames,256):
         sl=slice(f*npatch,min((f+256),n_frames)*npatch)
-        a,_=sae.encode(X[sl].to(DEV))
+        a,_=sae.encode(X[sl].to(DEV).float())
         a=a.reshape(-1,npatch,M)
         mx[f:f+a.shape[0]]=a.max(1).values.cpu(); mn[f:f+a.shape[0]]=a.mean(1).cpu()
     return mx.numpy(),mn.numpy()
@@ -314,10 +330,16 @@ def main():
         saves[f"prof_max_s{s}"]=mx.astype(np.float32); saves[f"prof_mean_s{s}"]=mn.astype(np.float32)
         alive.append(float((sae.fires>0).float().mean()))
         if s==0:
+            # spatial entropy accumulated in CHUNKS: the full act tensor for 400k rows would be
+            # 6.6 GB on GPU and 6.6 GB again on the host.
+            pos=torch.zeros(npatch,M,device=DEV); nfr=0
             with torch.no_grad():
-                act,_=sae.encode(X[:min(len(X),400_000)].to(DEV))
-                A=act.reshape(-1,npatch,M).cpu().numpy()
-            pos=A.mean(0)                                  # (npatch, M) mean activation per position
+                for c in range(0,min(len(X),400_000),npatch*64):
+                    xb=X[c:c+npatch*64].to(DEV).float()
+                    if xb.shape[0]<npatch: break
+                    act,_=sae.encode(xb)
+                    pos+=act.reshape(-1,npatch,M).sum(0); nfr+=act.shape[0]//npatch
+            pos=(pos/max(nfr,1)).cpu().numpy()
             pos=pos/ (pos.sum(0,keepdims=True)+1e-9)
             sp_ent=-(pos*np.log(pos+1e-12)).sum(0)         # entropy over spatial position per feature
             saves["W_dec"]=sae.W_dec.detach().cpu().numpy().astype(np.float32)
