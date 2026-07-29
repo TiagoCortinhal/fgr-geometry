@@ -28,3 +28,4 @@ out_usfmae/
 **/fmcache_*.dat
 **/factvq_codes_*.npz
 .idea/
+**/code_topics_*.npz
