@@ -37,15 +37,23 @@ HERE=os.path.dirname(os.path.abspath(__file__))
 OUT=os.environ.get("GA_OUT_DIR",os.path.join(HERE,"out_usfmae"))
 OUTP=os.path.join(HERE,"out_probe"); os.makedirs(OUTP,exist_ok=True)
 
-def onehot_streams(codes_private,Kp):
-    """(n_img, E, n_patch) private code ids -> (E, n_img*n_patch, Kp) one-hot stream matrices.
-    Variance decomposition on the one-hot representation is the discrete analogue of the feature
-    decomposition: shared = mean over streams, private = deviation."""
+def onehot_streams(codes_private,Kp,max_rows=200_000,seed=0):
+    """(n_img, E, n_patch) private code ids -> (E, M, Kp) one-hot stream matrices.
+
+    SUBSAMPLED by design. The floor is a VARIANCE RATIO and converges almost immediately: on
+    independent streams M=20k already gives 0.3330 against the analytic 1/3=0.3333. Using all
+    n_img*n_patch rows (5.2M for 20413 frames x 256 patches) makes S 4 GB and 200 permutations
+    ~1.6 TB of memory traffic for no added precision. Rows are sampled JOINTLY across streams so
+    the cross-stream correspondence being tested is preserved."""
     n,E,P=codes_private.shape
-    S=np.zeros((E,n*P,Kp),np.float32)
-    for e in range(E):
-        flat=codes_private[:,e,:].reshape(-1)
-        S[e,np.arange(len(flat)),flat]=1.0
+    flat=codes_private.transpose(1,0,2).reshape(E,n*P)      # (E, n*P) aligned across streams
+    N=flat.shape[1]
+    if N>max_rows:
+        idx=np.random.default_rng(seed).choice(N,max_rows,replace=False); flat=flat[:,idx]
+    M=flat.shape[1]
+    S=np.zeros((E,M,Kp),np.float32)
+    rows=np.arange(M)
+    for e in range(E): S[e,rows,flat[e]]=1.0
     return S
 
 def split_fractions(S):
@@ -68,7 +76,7 @@ def shuffled_floor(S,scheme,n_perm,rng):
 
 def main():
     ap=argparse.ArgumentParser()
-    ap.add_argument("--npz",default=None); ap.add_argument("--n-perm",type=int,default=200)
+    ap.add_argument("--npz",default=None); ap.add_argument("--n-perm",type=int,default=200); ap.add_argument("--max-rows",type=int,default=200_000)
     a=ap.parse_args()
     cands=[a.npz] if a.npz else (sorted(glob.glob(os.path.join(OUT,"crossenc_codes.npz")))
                                  +sorted(glob.glob(os.path.join(OUT,"factvq_codes_*.npz"))))
@@ -80,7 +88,7 @@ def main():
         z=np.load(npz,allow_pickle=True); tag=os.path.basename(npz)
         if "codes_private" not in z.files: print(f"  skip {tag}: no private streams"); continue
         cp=z["codes_private"]; Kp=int(z["cb_private"].shape[1]); E=cp.shape[1]
-        S=onehot_streams(cp,Kp)
+        S=onehot_streams(cp,Kp,max_rows=a.max_rows)
         obs_s,obs_p=split_fractions(S)
         floor_analytic=1.0/E
         band=shuffled_floor(S,"sample",a.n_perm,rng)
@@ -94,8 +102,9 @@ def main():
                   "observed_shared_fraction":float(obs_s),"observed_private_fraction":float(obs_p),
                   "analytic_1overE_floor":float(floor_analytic),
                   "shuffle_floor_band":{"p5":float(p5),"median":float(p50),"p95":float(p95),"n_perm":a.n_perm},
+                  "rows_subsampled":int(S.shape[1]),"rows_total":int(cp.shape[0]*cp.shape[2]),
                   "excess_over_band_p95":float(excess),"verdict":verdict}
-        print(f"\n[{tag}] E={E} streams={streams}")
+        print(f"\n[{tag}] E={E} streams={streams} | rows used {S.shape[1]:,} of {cp.shape[0]*cp.shape[2]:,}")
         print(f"  observed shared fraction : {obs_s:.3f}")
         print(f"  analytic 1/E floor       : {floor_analytic:.3f}")
         print(f"  shuffle floor band       : p5 {p5:.3f} | median {p50:.3f} | p95 {p95:.3f}  ({a.n_perm} perms)")
