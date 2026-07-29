@@ -162,16 +162,27 @@ def main():
     # ---- wide tabular panel, european-decimal aware ----
     e=pd.read_excel(ECHO); e["nid"]=e["Cod"].apply(lambda x: str(int(float(x))) if pd.notna(x) else "NA")
     e=e.drop_duplicates("nid").set_index("nid")
+    # CURATED PANEL, not pattern-matched. The first attempt pattern-matched 345 columns and got 180
+    # variables of which 110 fell in "other" -- and the max-|r| ranking then surfaced MBSR_grup,
+    # EFtotal, Atriumcontralateral, Insula_depth, Grading_cingulate_fissure: NEURO/MRI and
+    # dietary-intervention columns from the IMPACT trial, plus `Cod` (the PATIENT ID, whose apparent
+    # signal is enrolment-order i.e. scanner drift). None of those can name a fetal appearance code.
+    # naming_panel.json enumerates the 45 fetal-physiology variables explicitly.
+    pj=os.path.join(HERE,"naming_panel.json")
+    assert os.path.exists(pj), "missing naming_panel.json (the curated fetal-physiology variable list)"
+    want=json.load(open(pj))
+    BANNED=("cod","nhc","id","record","trial","arm","grup","group","randomi")
     num={}
-    for c in e.columns:
-        if str(c)=="nid": continue
+    for c in want:
+        if c not in e.columns: continue
+        lc=str(c).lower()
+        if any(b==lc or lc.startswith(b+"_") for b in BANNED): continue   # IDs / trial arms
         v=eu_numeric(e[c])
         if v.notna().sum()>=MIN_OBS and v.nunique(dropna=True)>2:
-            # OUTCOMES ARE EVAL-ONLY in this project and must never become part of a code's NAME --
-            # naming a code by birth percentile would smuggle the outcome into the description.
-            if family_of(c)=="outcome": continue
+            if family_of(c)=="outcome": continue      # outcomes are EVAL-ONLY, never a name
             num[str(c)]=v
     panel=pd.DataFrame(num)
+    assert panel.shape[1]>=20, f"curated panel collapsed to {panel.shape[1]} variables"
     res["n_tabular_variables"]=int(panel.shape[1])
     fams=pd.Series({c:family_of(c) for c in panel.columns})
     res["variables_per_family"]=fams.value_counts().to_dict()
@@ -196,15 +207,38 @@ def main():
 
     # ---- profiles, adjusted ----
     R,Pv=profile_matrix(Pc,T,C_adj,cols)
-    q=by_correct(Pv.reshape(-1)).reshape(Pv.shape)
+    q=None   # computed after the permutation null below
     res["n_tests"]=int(np.isfinite(Pv).sum())
-    # ---- negative control: shuffle fetus<->code assignment ----
-    perm=rng.permutation(len(fet))
-    Rn,_=profile_matrix(Pc[perm],T,C_adj,cols)
-    res["negative_control_shuffled_max_abs_r"]=float(np.nanmax(np.abs(Rn)))
-    print(f"  NEGATIVE CONTROL (shuffled fetus<->code): max|r| {np.nanmax(np.abs(Rn)):.3f} "
-          f"vs real {np.nanmax(np.abs(R)):.3f}",flush=True)
+    # ---- negative control, DISTRIBUTION-MATCHED ----
+    # The first version compared max|r| real vs max|r| shuffled and "failed" uninformatively: with
+    # n=908 and 2880 correlations the largest |r| BY CHANCE is ~0.15-0.19, so shuffled max 0.191 vs
+    # real 0.274 was a max-vs-max comparison, not a null test -- and the 7/2880 BY survivors were
+    # exactly the chance ceiling. Now: N_NULL shuffles build the FULL null distribution of |r|, each
+    # observed effect gets a permutation p against it, and the two DISTRIBUTIONS are compared
+    # (KS + quantile table) rather than their maxima.
+    N_NULL=200
+    nulls=np.empty((N_NULL,)+R.shape,dtype=np.float32)
+    for i in range(N_NULL):
+        Rn,_=profile_matrix(Pc[rng.permutation(len(fet))],T,C_adj,cols)
+        nulls[i]=Rn
+    absnull=np.abs(nulls); absreal=np.abs(R)
+    p_perm=(1+np.nansum(absnull>=absreal[None],axis=0))/(N_NULL+1)      # per code x variable
+    from scipy.stats import ks_2samp
+    fr=absreal[np.isfinite(absreal)].ravel(); fn=absnull[np.isfinite(absnull)].ravel()
+    ks=ks_2samp(fr,fn)
+    res["negative_control"]={"n_shuffles":N_NULL,
+        "real_abs_r_quantiles":{str(q):float(np.nanquantile(fr,q)) for q in (0.5,0.9,0.99,1.0)},
+        "null_abs_r_quantiles":{str(q):float(np.nanquantile(fn,q)) for q in (0.5,0.9,0.99,1.0)},
+        "KS_stat":float(ks.statistic),"KS_p":float(ks.pvalue),
+        "interpretation":("real effects must be SHIFTED relative to the null distribution; comparing "
+                          "maxima is meaningless because a max over thousands of correlations is large "
+                          "by construction")}
+    print(f"  NEGATIVE CONTROL (distribution-matched, {N_NULL} shuffles):",flush=True)
+    print(f"    real |r| median {np.nanmedian(fr):.3f} p90 {np.nanquantile(fr,0.9):.3f} max {np.nanmax(fr):.3f}",flush=True)
+    print(f"    null |r| median {np.nanmedian(fn):.3f} p90 {np.nanquantile(fn,0.9):.3f} max {np.nanmax(fn):.3f}",flush=True)
+    print(f"    KS stat {ks.statistic:.3f} p={ks.pvalue:.2e}",flush=True)
 
+    q=by_correct(p_perm.reshape(-1)).reshape(p_perm.shape)   # BY over PERMUTATION p, not parametric
     # ---- naming reliability across the 5 saved seeds ----
     rel={}
     if "codes_all" in z.files and "centroids_all" in z.files:
