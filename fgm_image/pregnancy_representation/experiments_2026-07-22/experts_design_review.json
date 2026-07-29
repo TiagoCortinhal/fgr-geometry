@@ -1,0 +1,48 @@
+{
+  "question": "encoders-as-experts for WP2 axis annotation with visual words \u2014 is it sound, and what does the literature say?",
+  "verdict": "design-needs-changes",
+  "headline": "The architecture is sound and is NOT a repeat of the retraction \u2014 there is no combination step. But two of the three proposed agreement statistics have wrong nulls: with zero fetal signal, the plan's label-shuffle null produced 4/4 replication AND 4/4 sign concordance at p<1e-3 at the project's own measured site eta^2=0.061, and the fixed patch budget makes all-4-same-sign occur on NULL codes with probability 0.82 (raw) / 0.95 (CLR) against a stated null of 0.125 \u2014 a construction floor of exactly the retracted class. Site-stratified conditional permutation plus a mismatched-image agreement null rescue the design; sign concordance must be retired as inferential.",
+  "architecture_ruling": "SOUND and NOT a repeat of the retraction \u2014 there is no combination step. But 2 of the 3 proposed agreement statistics had WRONG NULLS.",
+  "FLAWS_FOUND_IN_MY_PLAN": [
+    {
+      "flaw": "SIGN CONCORDANCE was a construction floor of the RETRACTED CLASS.",
+      "detail": "The fixed patch budget makes the histograms COMPOSITIONAL (shares sum to 1). Under closure, all-4-same-sign occurs on NULL codes with probability 0.82 (raw shares) / 0.95 (CLR) against my stated coin-flip null of 0.125 \u2014 wrong by ~7x and anti-conservative. Off-target per-code correlations reproduced the closure identity -r0/(K-1) to three decimals (observed mean -0.0181 vs predicted -0.0177). RETIRED as an inferential statistic."
+    },
+    {
+      "flaw": "The LABEL-SHUFFLE null fabricates full agreement from the site confound alone.",
+      "detail": "With ZERO fetal-anatomy signal, at this project's own MEASURED institution eta^2=0.061, the label-shuffle null produced 4/4 replication, 4/4 sign concordance, and all four per-encoder p<1e-3 (8.0e-4, 2.0e-4, 1.0e-3, 2.0e-4). Must be replaced by SITE/SCANNER-STRATIFIED CONDITIONAL PERMUTATION (Berrett et al. 2020). Not optional."
+    },
+    {
+      "flaw": "REPLICATION-COUNT-OVER-4 is nearly vacuous at the project's adjusted bar.",
+      "detail": "At E=4 the attainable p-values are a 4-point lattice. At per-expert false-flag p0=0.10: P(>=2)=0.052 \u2014 does not even clear nominal 0.05, let alone BY 1.65e-4 or project Bonferroni 8.6e-5; P(>=3)=0.0037; only P(>=4)=1.0e-4 clears the charitable floor. So '>=2 of 4' is not a meaningful bar. DEMOTED to a descriptor; primary becomes a random-effects meta-analysis over the four per-encoder effects with encoder as a random effect."
+    },
+    {
+      "flaw": "MISSING CEILING: within-encoder across-seed correspondence was never going to be measured.",
+      "detail": "Paulo & Belrose (arXiv:2501.16615) found SAEs differing ONLY in init seed share ~30% of features on the same model and data. If our own seed-to-seed code correspondence is ~0.3, then cross-encoder correspondence of 0.3 is EXACTLY ZERO EVIDENCE. Must report within-encoder across-seed agreement FIRST (>=5 seeds x 4 encoders, k-means cost only) and express cross-encoder agreement as a FRACTION of that ceiling. If within-encoder correspondence <~0.5 the design fails."
+    },
+    {
+      "flaw": "Patch-overlap null had three defects.",
+      "detail": "(i) naive patch-shuffle null is pinned at 0.069 regardless of shared-nuisance strength while real matched overlap rises 0.070->0.168 as nuisance grows; (ii) must permute WHOLE IMAGES not individual patches; (iii) Hungarian matching must be computed INSIDE the permutation loop. Use ADJUSTED MUTUAL INFORMATION as primary."
+    }
+  ],
+  "MoE_terminology": "CONFIRMED as a terminology error with a real hazard (Shazeer et al. arXiv:1701.06538): every structural element of MoE \u2014 gate, routing, joint training \u2014 is absent from AND UNWANTED in this design, because a learned gate would coordinate the encoders and destroy the independence that makes agreement evidence.",
+  "K16_ruling": "DEFENSIBLE as primary with a bounded claim, and it has POSITIVE external support: Ramaswamy et al. CVPR 2023 put the human-interpretability ceiling at <=32 concepts, favouring K=16 over K=64. Power at n=908 with ~8 df: 80% power at |r|>=0.093 nominal, 0.153 at BY 1.65e-4, 0.158 at project Bonferroni. A code at 25% patch share needs only a 1.8% relative shift to give r=0.15.",
+  "CKA_ruling": "DROP global CKA/RSA from the evidence chain entirely (Ding et al. arXiv:2108.01661; Davari et al. arXiv:2210.16156 \u2014 the reliability criticism names our exact setting: four checkpoints from four groups, none produced under a controlled procedure). Our statistic is patch-level correspondence, not global feature-space similarity.",
+  "precedent_for_agreement_as_evidence": [
+    "Li et al. arXiv:1511.07543 (Convergent Learning) \u2014 canonical precedent; PARTIAL correspondence is the expected shape of a REAL finding, so 2-of-4 is not automatically weak",
+    "Dravid et al. arXiv:2306.09346 (Rosetta Neurons, ICCV 2023) \u2014 strongest precedent for agreement-as-data-property; recovered concepts are low/mid-level and generic, consistent with a K=16 coarse-class expectation",
+    "Lan et al. arXiv:2410.06981 \u2014 validates the two-stage shape (establish correspondence, then test); expect a MINORITY of codes to correspond",
+    "Meinshausen & Buhlmann Stability Selection (10.1111/j.1467-9868.2010.00740.x) \u2014 its error bound does NOT transfer: MB is over subsamples of ONE procedure on ONE dataset; ours is four DIFFERENT encoders",
+    "Senbabaoglu et al. (10.1038/srep06207) \u2014 consensus-clustering limitation maps onto our failure mode: patch-assignment overlap IS a co-assignment rate, and this latent is already established as a connected continuum"
+  ],
+  "revised_primary": "K=16 x WP2-axis-position as the SOLE primary family: 4 encoders x 16 codes = 64 tests, BY-adjusted alpha 1.65e-4. All clinical endpoints and all other K values declared EXPLICITLY EXPLORATORY (4x16x4 endpoints x3 K = 768 new tests would push the ledger 584 -> 1352 and full Bonferroni to 3.7e-5; and the clinical endpoints are structurally underpowered at 91 <p10 events).",
+  "wp2_axis_blocker": "The available per-fetus latent (final_perparam_latent.npz, 908 fetuses) is the config-B GRU-VAE latent, which takes the IMAGE-DERIVED appearance lag as an input \u2014 its maturation axis correlates rho=+0.818 with mean_lag and even head-sparing +0.653. Using it would make the annotation PARTLY CIRCULAR (image-derived input tested against image-derived words). The axis must come from the TABULAR-only fit: either size_scalar (observed biometry mean z, purely tabular) as primary, or an FA refit of the 26-column static panel verified to reproduce lambda2=2.47.",
+  "ordered_next_steps": [
+    "0. Supply the TABULAR WP2 axis (size_scalar primary; FA refit as robustness). Blocker until then.",
+    "1. WITHIN-ENCODER ACROSS-SEED CEILING first (>=5 seeds x 4 encoders). If <~0.5, the cross-encoder design fails and stops here \u2014 cheapest possible kill.",
+    "2. Site/scanner-STRATIFIED CONDITIONAL PERMUTATION as the null everywhere (never label-shuffle).",
+    "3. MISMATCHED-IMAGE agreement null: refit all four codebooks with image->fetus mapping permuted within site x plane x GA-window, >=20 refits.",
+    "4. Compositional analysis (CLR/ALR) with the closure floor -r0/(K-1) reported beside every per-code effect.",
+    "5. PRIMARY = random-effects meta-analysis over the 4 per-encoder effects; replication count is a descriptor only; sign concordance retired."
+  ]
+}

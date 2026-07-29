@@ -1,0 +1,59 @@
+{
+  "question": "drop shared/private; keep codebooks FOR INTERPRETABILITY; build a cross-sectional pregnancy latent",
+  "mode": "design + literature only; nothing trained",
+  "landed": [
+    "CodeNaming",
+    "CohortPower",
+    "CrossSecLatent",
+    "Registry"
+  ],
+  "verdicts": {
+    "CodeNaming": "do-this-first",
+    "CohortPower": "do-this-first",
+    "CrossSecLatent": "do-this-first",
+    "Registry": "do-this-first"
+  },
+  "CRITICAL_FINDINGS": [
+    {
+      "finding": "'Codes retain 82% of the GA clock' HAS NO NULL ROW and is currently UNINTERPRETABLE, not wrong.",
+      "detail": "Registry simulated a data-INDEPENDENT balanced random partition of the same granularity: it already retains 68% (K=64) and 75% (K=256) of the full-feature GA ceiling, vs 93% for learned k-means and ~0% for a shuffled-feature codebook. Our measured 82% sits between the unlearned partition and learned k-means, so most of it may be the arithmetic of binning a smooth gradient rather than the codebook having learned anything. THE MATCHED-GRANULARITY RANDOM-PARTITION CONTROL HAS NEVER BEEN RUN.",
+      "distinct_from_settled_null": "This is NOT the settled 'no compact subset of codes carries GA' null. That asked WHICH codes; this asks whether the LEARNED partition beats an UNLEARNED one at the same granularity."
+    },
+    {
+      "finding": "Frame-level CIs across this project are 2.7-4.4x TOO NARROW.",
+      "detail": "CohortPower MEASURED the within-fetus ICC for the first time in this project: 0.12-0.32. Design effects 7.4x (IMPACT) and 19.7x (clinical) at ~22.5 frames/fetus. Effective n is ~1.6-2.8k, not 20-32k. Every frame-level CI already reported must be re-issued as a by-fetus cluster bootstrap."
+    },
+    {
+      "finding": "The plane-residual POSITIVE ('95% of GA r survives regressing plane out') may be a measurement-error artefact.",
+      "detail": "Registry simulated GA as 100% plane-driven BY CONSTRUCTION and then adjusted with one-hot plane labels of varying accuracy: residual |r| = 0.006 at 100% label accuracy, 0.278 at 95%, 0.425 at 90%, 0.577 at 80%. Our observed 0.446 is reproduced at ~90% label accuracy -- and plane_prop was audited at 3/6 wrong at conf=1.00. So adjusting for a label too noisy to adjust with cannot establish that GA is not a plane artefact. Fix: hand-label a plane validation set and repeat WITHIN hand-verified plane."
+    },
+    {
+      "finding": "The retracted 0.830 shared-only number was AT OR ABOVE its own analytic floor for every plausible E.",
+      "detail": "Independent of today's 1/E variance floor, Registry notes the analytic floor for SHARED-ONLY RECONSTRUCTION error is 1-1/E: 0.50 at E=2 up to 0.83 at E=6. Our observed 0.830 sits at/above the floor -- a second, independent confirmation that the shared/private result was construction, not content."
+    },
+    {
+      "finding": "Multiplicity ledger rebuilt: 218 constructions, 584 construction x endpoint tests.",
+      "detail": "Adjusted Bonferroni alpha = 8.6e-5 (M=584) or 5.0e-4 at a charitable M=100. Bootstrap at 2000 reps CANNOT resolve p<5e-4 -- needs >=20000. Required P(Delta>0) is 0.9995 (M=100) to 0.999914 (M=584). Under that bar FOUR of the five surviving positives are DESCRIPTIVE EXISTENCE TESTS, not findings; only the ENCODER ORDERING clears it -- and only the medical-vs-ImageNet contrast (FetalCLIP vs ResNet delta 0.260, CI [+0.183,+0.343]); FetalCLIP vs DINOv2-g (delta 0.034, p=0.048) FAILS."
+    },
+    {
+      "finding": "The obvious ablation control for code naming is itself broken.",
+      "detail": "CodeNaming: a UNIFORM-RANDOM mask fabricates +1.65 wk of apparent GA effect. Masking 'a random 5% of patches' is not a valid control; a POSITION-MATCHED control is required. It also designed a label-free test that separates 'code detects anatomy' from 'code fires on bright-region-at-top' at z=16.8 with ~50 same-fetus frame pairs, and capped the expert 2AFC study at 40 codes x 30 trials (~2.7h) with a usage floor + Benjamini-Yekutieli over 1,640 tests."
+    },
+    {
+      "finding": "Cross-cohort r comparison is invalid as stated; the cohorts AGREE once range-corrected.",
+      "detail": "CohortPower: IMPACT r=0.469 (GA SD 1.36) and clinical r=0.906 (SD 6.92) lie on one iso-MAE curve -- IMPACT actually WINS at matched spread (z=5.2). Report MAE IN DAYS alongside every r: ours is 2.11wk = 14.8 days vs published 3.0-4.3 days, i.e. ~4x worse. Recommendation: build on CLINICAL, demote IMPACT to held-out replication, DO NOT POOL."
+    },
+    {
+      "finding": "Aitchison/CLR compositional geometry RULED OUT by simulation at this project's 37.5% zero rate.",
+      "detail": "CrossSecLatent: use Hellinger (Euclidean on sqrt-proportions) as primary with L1 as the single declared robustness metric. Also: IMAGE COUNT per fetus is a first-order artefact that only PATCH-BUDGET EQUALISATION removes. Recommends keeping the raw K=320 per-fetus composition AS the latent (no factorisation), with a split-half reliable-axis count and a GA-anchored principal curve."
+    }
+  ],
+  "CONVERGENT_RECOMMENDATION": "All four landed tracks say the same thing in different words: STOP LOOKING FOR A NEW POSITIVE AND RUN THE MISSING CONTROLS. The three that decide whether there is a codebook paper at all are (1) matched-granularity random-partition control, (2) plane adjustment with hand-verified labels rather than kNN labels, (3) effective-n/ICC correction of every existing CI. Two of these attack results currently treated as positive.",
+  "next_actions_ranked": [
+    "1. MATCHED-GRANULARITY RANDOM-PARTITION CONTROL (CPU, saved codes, ~1 day). Does the learned codebook beat a data-independent partition of the same granularity at retaining GA? If not, the codebook adds nothing over binning.",
+    "2. RE-ISSUE EVERY CI as a by-fetus cluster bootstrap at >=20000 reps using the measured ICC 0.12-0.32. Cheap, and it affects every number already reported.",
+    "3. HAND-LABEL A PLANE VALIDATION SET and repeat the plane-residual test within hand-verified plane. Decides whether the one surviving GA positive is real or a label-noise artefact.",
+    "4. THEN (only if 1-3 survive) the clinical-cohort codebook run: 1 encoder, frozen IMPACT geometry, 3 pre-registered readouts, ~3-4h GPU.",
+    "5. Code characterisation: Tier-0 usage gate (K_eff reported as a RESULT), label-free cards, position-matched ablation, then the bounded expert 2AFC study."
+  ]
+}
