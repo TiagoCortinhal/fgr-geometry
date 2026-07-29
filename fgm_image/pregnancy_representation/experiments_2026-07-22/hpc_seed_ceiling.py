@@ -48,6 +48,24 @@ FIT_FRAMES=4000      # frames used to FIT the codebook (k-means converges long b
 BATCH=32
 KILL_AMI=0.50        # fixed before seeing numbers
 from hpc_extract_4encoders import BUILDERS, frame_table
+
+def cohort_table(cohort):
+    """IMPACT via the shipped frame_table; CLINICAL via the prefix-tolerant resolver.
+
+    The clinical store nests under processed/grouped/IMPACT_CLINICAL/<machine>/<subdir>/ and its
+    on-disk filenames carry a LEADING NUMERIC PREFIX that clinical_index.csv lacks
+    (disk: 60813_IMP0469_20171213_...OBMBFET.png vs index: IMP0469_20171213_...OBMBFET), which is why
+    a flat basename join found 0 of 30,257. clinical_paths.resolve() walks the tree and matches on the
+    prefix-stripped stem, and excludes debug_inpainting/ artefacts."""
+    if cohort=="impact": return frame_table()
+    import clinical_paths
+    df,_look=clinical_paths.resolve(os.environ.get("CLINICAL_ROOT",      # returns (df, lookup)
+        "/mnt/beegfs/groups/collage/data/IMPACT_CLINICAL/processed"))
+    df=df[df["img"].astype(str).str.len()>0].reset_index(drop=True)      # drop unresolved rows
+    assert len(df)>1000, (f"clinical resolver matched only {len(df)} frames of the 30,257 index rows -- "
+        "check CLINICAL_ROOT and that the container binds .../IMPACT_CLINICAL/processed (the clinical "
+        "images were invisible inside Apptainer until that bind was added)")
+    return df
 from hpc_crossenc_factvq import patch_tokens          # verified for all four encoders
 
 def gpu_kmeans(X,K,seed,iters=40):
@@ -98,9 +116,10 @@ def collect_tokens(enc,df,layer_frac=0.75):
 def main():
     ap=argparse.ArgumentParser()
     ap.add_argument("--K",type=int,default=16); ap.add_argument("--seeds",type=int,default=5)
+    ap.add_argument("--cohort",default="impact",choices=["impact","clinical"])
     ap.add_argument("--check",action="store_true"); ap.add_argument("--fit-frames",type=int,default=FIT_FRAMES)
     a=ap.parse_args()
-    df=frame_table()
+    df=cohort_table(a.cohort)
     rng=np.random.default_rng(0)
     # fit frames: sampled across fetuses so no fetus dominates the vocabulary
     per=max(1,a.fit_frames//df.nid.nunique())
@@ -117,7 +136,7 @@ def main():
         t=patch_tokens("FetalCLIP",m,x)
         res["probe_FetalCLIP_shape"]=list(t.shape)
         print(f"  CHECK FetalCLIP patch tokens {tuple(t.shape)} (B,L,Np,D)",flush=True)
-        json.dump(res,open(os.path.join(OUTP,f"seed_ceiling_K{a.K}.json"),"w"),indent=2)
+        json.dump(res,open(os.path.join(OUTP,f"seed_ceiling_K{a.K}{'' if a.cohort=='impact' else '_clin'}.json"),"w"),indent=2)
         print("  CHECK ONLY -> wrote json, no fitting",flush=True); return
 
     res["per_encoder"]={}
@@ -143,7 +162,7 @@ def main():
               "mean_pairwise_AMI":float(np.mean(pair_ami)),"min_pairwise_AMI":float(np.min(pair_ami)),
               "mean_hungarian_acc":float(np.mean(pair_acc)),
               "whole_image_permutation_AMI":float(ami(labs[0],shuf))}
-            np.savez(os.path.join(OUT,f"wp2codes_{enc}_K{a.K}.npz"),
+            np.savez(os.path.join(OUT,f"wp2codes_{enc}_K{a.K}{'' if a.cohort=='impact' else '_clin'}.npz"),
                      codes=labs[0].reshape(len(fit),npatch).astype(np.int16),
                      centroids=cents[0], nid=fit["nid"].astype(str).values,
                      plane=fit["plane_prop"].values, ga=fit["ga_weeks_recovered"].values,
@@ -168,7 +187,7 @@ def main():
             res["VERDICT"]=(f"CEILING ADEQUATE ({mean_ceiling:.3f}) -- cross-encoder agreement is interpretable; "
               "still report it as a fraction of this ceiling.")
         print(f"\n  MEAN CEILING {mean_ceiling:.3f}\n  {res['VERDICT']}",flush=True)
-    json.dump(res,open(os.path.join(OUTP,f"seed_ceiling_K{a.K}.json"),"w"),indent=2)
+    json.dump(res,open(os.path.join(OUTP,f"seed_ceiling_K{a.K}{'' if a.cohort=='impact' else '_clin'}.json"),"w"),indent=2)
     print(f"saved out_probe/seed_ceiling_K{a.K}.json\nDONE",flush=True)
 
 if __name__=="__main__": main()

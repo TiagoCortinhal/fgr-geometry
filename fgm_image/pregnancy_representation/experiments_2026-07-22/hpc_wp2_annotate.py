@@ -86,6 +86,24 @@ ENCS=["FetalCLIP","USF-MAE","USFM","DINOv2"]
 SEED_CEILING=0.745          # measured by hpc_seed_ceiling.py; every agreement is a fraction of this
 BATCH=32
 from hpc_extract_4encoders import BUILDERS, frame_table
+
+def cohort_table(cohort):
+    """IMPACT via the shipped frame_table; CLINICAL via the prefix-tolerant resolver.
+
+    The clinical store nests under processed/grouped/IMPACT_CLINICAL/<machine>/<subdir>/ and its
+    on-disk filenames carry a LEADING NUMERIC PREFIX that clinical_index.csv lacks
+    (disk: 60813_IMP0469_20171213_...OBMBFET.png vs index: IMP0469_20171213_...OBMBFET), which is why
+    a flat basename join found 0 of 30,257. clinical_paths.resolve() walks the tree and matches on the
+    prefix-stripped stem, and excludes debug_inpainting/ artefacts."""
+    if cohort=="impact": return frame_table()
+    import clinical_paths
+    df,_look=clinical_paths.resolve(os.environ.get("CLINICAL_ROOT",      # returns (df, lookup)
+        "/mnt/beegfs/groups/collage/data/IMPACT_CLINICAL/processed"))
+    df=df[df["img"].astype(str).str.len()>0].reset_index(drop=True)      # drop unresolved rows
+    assert len(df)>1000, (f"clinical resolver matched only {len(df)} frames of the 30,257 index rows -- "
+        "check CLINICAL_ROOT and that the container binds .../IMPACT_CLINICAL/processed (the clinical "
+        "images were invisible inside Apptainer until that bind was added)")
+    return df
 from hpc_crossenc_factvq import patch_tokens
 
 # ---------- helpers ----------
@@ -148,13 +166,14 @@ def build_strata(nid_u):
     return lab,info
 
 # ---------- Stage A: assign all frames to frozen centroids ----------
-def assign_all(enc,K):
-    dst=os.path.join(OUT,f"wp2fullcodes_{enc}_K{K}.npz")
+def assign_all(enc,K,cohort='impact'):
+    tag='' if cohort=='impact' else '_clin'
+    dst=os.path.join(OUT,f"wp2fullcodes_{enc}_K{K}{tag}.npz")
     if os.path.exists(dst): print(f"  {enc}: full assignment exists, skip",flush=True); return dst
-    src=os.path.join(OUT,f"wp2codes_{enc}_K{K}.npz")
+    src=os.path.join(OUT,f"wp2codes_{enc}_K{K}{tag}.npz")
     assert os.path.exists(src), f"missing {src} -- run hpc_seed_ceiling.py first"
     z=np.load(src,allow_pickle=True); C=torch.tensor(z["centroids"],device=DEV).float()
-    li=int(z["layer_index"]); df=frame_table(); m,tf,_=BUILDERS[enc]()
+    li=int(z["layer_index"]); df=cohort_table(a.cohort); m,tf,_=BUILDERS[enc]()
     labs=[]; t0=time.time()
     for b0 in range(0,len(df),BATCH):
         bs=df.iloc[b0:b0+BATCH]
@@ -204,7 +223,7 @@ def main():
     # Stage A
     paths={}
     for enc in ENCS:
-        try: paths[enc]=assign_all(enc,a.K)
+        try: paths[enc]=assign_all(enc,a.K,a.cohort)
         except Exception as ex: print(f"  {enc}: SKIP ({type(ex).__name__}: {ex})",flush=True)
     res["encoders_assigned"]=list(paths)
     if a.assign_only:
