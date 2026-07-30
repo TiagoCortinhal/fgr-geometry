@@ -321,7 +321,13 @@ def evaluate(Zad,Zfr,fetuses,T,outcomes,fold_of):
             pred[te]=M.predict(Z[te])
         m=np.isfinite(pred)&np.isfinite(yy)
         return pred,(float(spearmanr(pred[m],yy[m]).statistic) if m.sum()>30 else np.nan)
-    out={"n_fetuses":int(len(fe))}
+    out={"n_fetuses":int(len(fe)),
+         "readout_note":("Q1/Q2/Q3 use RIDGE-ON-EMBEDDING for BOTH arms -- the only comparison that is "
+            "fair, since the frozen encoder has no trained head. Note this UNDERSTATES what the "
+            "fine-tuned model achieves end-to-end: the adapter is 0.17% of parameters, so the task "
+            "HEAD does most of the target-specific work, and the inner-validation curve (which rose to "
+            "+0.27..+0.39) is the HEAD's own output on ~145 within-fold fetuses, not this ridge. "
+            "head_readout below gives the end-to-end number so the two are not conflated.")}
     # --- Q1: trained targets ---
     out["trained_targets"]={}
     for c in ["EG_ecoIMPACT"]+DOPPLER:
@@ -456,11 +462,21 @@ def main():
     res["fold_hash"]=fh; print(f"  folds written, hash {fh} (must match across frozen and adapted arms)",flush=True)
     fold_of=dict(zip(df["nid"],df["fold"]))
     build=lambda: AdaptedFetalCLIP(BUILDERS["FetalCLIP"]()[0],len(centres),len(DOPPLER))
-    Zad={}; Zfr={}; per_fold=[]
+    Zad={}; Zfr={}; HEAD={}; per_fold=[]
     for k in range(a.folds):
         t0=time.time()
         mdl,te_f,vbest,ebest,hist=run_fold(df,T,k,centres,a,tf,build)
         Zad.update(embed_fetuses(mdl,df,te_f,tf,a.eval_cap))
+        # END-TO-END head readout on the TEST fold: the adapted model's own Doppler predictions.
+        # Needed because the rising inner-val curve refers to the HEAD, while the arm-vs-arm
+        # comparison below is ridge-on-embedding -- conflating them would overstate the adaptation.
+        mdl.eval(); idx_by=df.groupby("nid").indices
+        with torch.no_grad():
+            for f in te_f:
+                ii=idx_by[f][:a.eval_cap]
+                if len(ii)==0: continue
+                x=load_batch(df,ii,tf).to(DEV)
+                _,dpv,_=mdl(x); HEAD[f]=dpv.float().cpu().numpy().mean(0)
         # FROZEN arm: same module instance with the LoRA path REMOVED, so the only difference between
         # arms is the adapter -- not a separate model load, not different preprocessing, not a
         # different pooling. Same fetuses, same frames, same fold.
@@ -483,6 +499,15 @@ def main():
     assert ident>1e-5, (f"adapted and frozen embeddings are identical (max|diff|={ident:.2e}) -- the "
         "adapter learned nothing or was bypassed in both arms. Do not interpret any result.")
     res["evaluation"]=evaluate(Za,Zf,fe,T,outcomes,fold_of)
+    hf=[f for f in fe if f in HEAD]
+    if hf:
+        H=np.stack([HEAD[f] for f in hf]); hr={}
+        for j,c in enumerate(DOPPLER):
+            y=T[c].reindex(hf).values.astype(float); m=np.isfinite(y)
+            hr[c]=float(spearmanr(H[m,j],y[m]).statistic) if m.sum()>30 else np.nan
+        res["evaluation"]["head_readout_endtoend"]=hr
+        print("  Q1b END-TO-END HEAD on test fold (what the val curve refers to):",flush=True)
+        for c,v in hr.items(): print(f"    {c:16s} head_r {v:+.3f}",flush=True)
     tt=res["evaluation"]["trained_targets"]
     print("\n  Q1 TRAINED TARGETS (did adaptation happen at all?)",flush=True)
     for c,v in tt.items():
@@ -496,10 +521,28 @@ def main():
         for o,v in d_.items():
             print(f"    [{arm:7s}] {o:17s} raw {v['r_raw']:+.3f} size-orth {v['r_size_orthogonal']:+.3f} "
                   f"| resid-size corr {v['corr_residual_with_size']:+.3f} (must be ~0) n={v['n']}",flush=True)
-    dmax=max((abs(v["delta"]) for v in tt.values() if np.isfinite(v["delta"])),default=0.0)
-    res["VERDICT"]=("ADAPTATION DID NOT HAPPEN: no trained target improved by more than the 0.041 "
-        "minimum detectable paired delta-r. Nothing downstream is interpretable." if dmax<0.041 else
-        "adaptation moved at least one trained target; read Q2/Q3 for whether it carries anything new")
+    # SIGNED gate. The first version used abs(delta), so a GA DEGRADATION of -0.099 printed
+    # "adaptation moved at least one trained target" -- degradation is not adaptation. The gate now
+    # separates gains from losses and reports forgetting explicitly.
+    MDE=0.041
+    d=[v["delta"] for v in tt.values() if np.isfinite(v["delta"])]
+    gains=[x for x in d if x>MDE]; losses=[x for x in d if x<-MDE]
+    bio=[v["delta"] for v in res["evaluation"]["heldout_biometry"].values() if np.isfinite(v["delta"])]
+    bio_loss=[x for x in bio if x<-MDE]
+    res["gate"]={"MDE":MDE,"n_trained_gained":len(gains),"n_trained_degraded":len(losses),
+                 "n_heldout_biometry_degraded":len(bio_loss),"mean_biometry_delta":float(np.mean(bio))}
+    if len(bio_loss)>=3 or (len(losses)>0 and not gains):
+        res["VERDICT"]=(f"CATASTROPHIC FORGETTING: {len(bio_loss)} of {len(bio)} held-out biometry "
+          f"measures degraded beyond the MDE (mean delta {np.mean(bio):+.3f}) and {len(losses)} trained "
+          f"target(s) degraded. The adapted representation is WORSE than frozen on everything it was "
+          f"not directly optimising. Any gain on a trained target is bought by damaging the "
+          f"pretrained features, not by learning new structure.")
+    elif not gains:
+        res["VERDICT"]=(f"ADAPTATION DID NOT HAPPEN: no trained target gained more than the {MDE} "
+          "minimum detectable paired delta-r. Nothing downstream is interpretable.")
+    else:
+        res["VERDICT"]=(f"{len(gains)} trained target(s) gained beyond MDE with biometry mean delta "
+          f"{np.mean(bio):+.3f}; read Q2/Q3 for whether anything NEW is carried")
     print(f"\n  {res['VERDICT']}",flush=True)
     json.dump(res,open(os.path.join(OUTP,"lora_finetune.json"),"w"),indent=2,default=str)
     print("saved out_probe/lora_finetune.json\nDONE",flush=True)
