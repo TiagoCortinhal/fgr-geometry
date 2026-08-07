@@ -852,3 +852,58 @@ def fgm_precision_test(dev_df, IMG, fids, GA, BMI=None, nperm=400, seed=0):
         out["null_p95"] = float(np.percentile(nl, 95))
         out["p"] = float((1 + sum(x >= r1 for x in nl)) / (1 + len(nl)))
     return out
+
+
+MANIFEST_CSV = "/Users/tiago/dev/fgr-geometry/results/img_align/image_clusters.csv"
+
+
+def fgm_image_pcs_by_plane(fids, n_pc=4, layer="emb_l5", planes=None,
+                           use_labelled=True, path=None, manifest=None):
+    """Per-fetus image PCs computed SEPARATELY PER ANATOMICAL PLANE.
+
+    The default pooled representation (fgm_image_pcs) averages ~22 frames of
+    DIFFERENT planes into one vector, on top of USFM's own patch pooling — two
+    averaging steps that destroy any plane-specific signal before the statistics
+    start. This builds one block per plane instead.
+
+    use_labelled=True uses IMPACT's ground-truth `plane` column (12,929 frames);
+    False uses the kNN-propagated `plane_prop` (all frames, but a visual audit
+    found it unreliable on the clinical set — 3 of 6 spot checks wrong).
+
+    Returns (dict plane -> (n_fetuses, n_pc) array aligned to fids, dict plane -> n).
+    Unlike a PCA of the pooled vector, these blocks have genuine WITHIN-block
+    structure: cerebral/abdominal/femur embeddings are correlated with each other.
+    """
+    import numpy as np
+    import pandas as pd
+    from sklearn.decomposition import PCA
+    if planes is None:
+        planes = ["cerebral", "abdominal", "femur"]
+    if path is None:
+        path = EMB_NPZ
+    if manifest is None:
+        manifest = MANIFEST_CSV
+    z = np.load(path, allow_pickle=True)
+    man = pd.read_csv(manifest)
+    col = "plane" if use_labelled else "plane_prop"
+    lut = dict(zip(man.new_filename.astype(str), man[col].astype(str)))
+    nf = pd.Series(z["new_filename"]).astype(str).values
+    pl = np.array([lut.get(x, "nan") for x in nf])
+    imp = pd.Series(z["dataset_type"]).astype(str).values == "impact"
+    E = z[layer].astype("float32")
+    fi = pd.to_numeric(pd.Series(z["fetus_id"]).astype(str), errors="coerce").values
+    out, counts = {}, {}
+    for p in planes:
+        m = imp & (pl == p) & np.isfinite(fi)
+        if m.sum() < 50:
+            continue
+        df = pd.DataFrame(E[m])
+        df["fid"] = fi[m].astype(int)
+        pf = df.groupby("fid").mean()
+        k = min(n_pc, pf.shape[0] - 1, pf.shape[1])
+        S = PCA(k, random_state=0).fit_transform(pf.values)
+        d = dict(zip([int(x) for x in pf.index], S))
+        arr = np.array([d.get(int(f), [np.nan] * k) for f in fids])
+        out[p] = (arr - np.nanmean(arr, 0)) / np.nanstd(arr, 0)
+        counts[p] = dict(frames=int(m.sum()), fetuses=int(pf.shape[0]))
+    return out, counts
