@@ -1,0 +1,49 @@
+{
+  "question": "does a nonlinear unsupervised latent (GPLVM) give the image lag a home the linear factor model denies it?",
+  "RETRACTION": "the first version of this analysis reported ARD relevance 0.464 for the lag against 0.188-0.204 for three nulls, and called the controls clean. THE CONTROL WAS CIRCULAR: the latent had been fitted with the true lag as one of its 26 outputs, so a smooth low-lengthscale direction existed for the lag by construction, while the nulls had never influenced the latent. I had diagnosed exactly this circularity for the predictive arm and failed to apply it to the ARD arm. Both arms are re-run below.",
+  "ARD_noncircular": {
+    "design": "latent fitted on the 25 TABULAR outputs only; ARD lengthscales then fitted for the lag and three nulls on that same lag-free latent, so all four are equally unseen",
+    "image_lag": 0.20527523756027222,
+    "noise_full": 0.20849940180778503,
+    "noise_lagcov": 0.24083271622657776,
+    "lag_shuffled": 0.17539504170417786,
+    "uniform": 0.125,
+    "superseded_circular": {
+      "lag": 0.464,
+      "nulls": [
+        0.204,
+        0.193,
+        0.188
+      ]
+    },
+    "verdict": "NULL. On a lag-free latent the lag reaches 0.205 against nulls at 0.175-0.241 -- it is INSIDE the null range, and noise_lagcov (0.241) beats it. The entire 0.46-vs-0.19 separation was the circularity."
+  },
+  "predictive_clean_refit": {
+    "design": "latent refitted from scratch on the 25 tabular outputs, three independent initialisations, lag predicted out of fold",
+    "FA_init": {
+      "r2": 0.036421843359240924,
+      "null95": 0.007174982765619199
+    },
+    "PCA_init": {
+      "r2": 0.03370271615762599,
+      "null95": 0.0007762664389045998
+    },
+    "random_init": {
+      "r2": -0.0018834783830066204,
+      "null95": 0.002063678666721432
+    },
+    "linear_FA_latent": 0.03303764942177845,
+    "ridge_raw_tabular": 0.032266507257828536,
+    "superseded": {
+      "value": 0.04,
+      "defect": "latent initialised from a fit that had seen the lag"
+    },
+    "verdict": "the 0.040 does not survive. FA-init gives 0.036, PCA-init 0.034, and RANDOM init gives -0.002. The two informative inits land on the linear FA latent's own value (0.033) and ridge on raw tabular (0.032) -- i.e. the GPLVM recovers the LINEAR signal and adds nothing. The random-init collapse shows the apparent gain was inherited from the linear initialisation, not learned."
+  },
+  "CONCLUSION": "NULL, after removing two layers of circularity. A nonlinear unsupervised latent does NOT give the image lag a home the linear model denies it. ARD relevance is inside the null band; predictive R2 matches the linear latent when initialised informatively and vanishes when initialised randomly. Combined with the earlier supervised results (A: magnitude hypothesis rejected; B: no interactions; C: nonlinear detection floor ~0.10 at n=883), the lag's near-independence is a property of the DATA, not an artefact of assuming linearity.",
+  "variational_decision": "the planned Bayesian GPLVM is NOT worth building. Its purpose was to attach posterior widths to a signal that, on this evidence, is not there. The from-scratch refit was the right gate and it closed.",
+  "caveats": [
+    "MAP GPLVM, Q=8, 250 Adam steps, single restart per initialisation -- a longer or multi-restart fit could differ, though the random-init collapse is hard to attribute to optimisation alone",
+    "the nonlinear detection floor measured earlier (~R2 0.10 at n=883) applies here too: an effect smaller than that would be invisible to this method as well"
+  ]
+}

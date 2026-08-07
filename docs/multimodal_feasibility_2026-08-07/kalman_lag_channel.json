@@ -1,0 +1,35 @@
+{
+  "question": "with reliability now known to be non-zero, does the image lag add information to the longitudinal size state?",
+  "model": "existing fgm/latent_kalman.py: random-walk state in gestational age, 1-factor biometry emission (ac/hc/bpd/fl z-scores), Kalman filter + RTS smoother, observations at true GA. The lag enters as a FIFTH measurement channel with per-fetus variance derived from its own image count.",
+  "lag_channel": {
+    "ICC_used": 0.062,
+    "source": "the >=4-image restricted estimate from lag_reliability_corrected.json",
+    "loading_on_size_state": 0.1170278621087029,
+    "measurement_variance_by_k": {
+      "1": 15.1,
+      "2": 7.6,
+      "4": 3.8,
+      "8": 1.9
+    },
+    "reading": "the reliability-derived variance is the honest version of precision weighting: a one-image fetus gets measurement variance 15.1 against the biometry channels' 0.1-0.9, so the filter correctly almost ignores it; an eight-image fetus gets 1.9 and contributes meaningfully."
+  },
+  "result": {
+    "biometry_only_posterior_SD": 0.4021662448474805,
+    "with_lag_posterior_SD": 0.40205908045013616,
+    "narrowing_pct": 0.027,
+    "restricted_k4": {
+      "biometry": 0.39788453856256917,
+      "with_lag": 0.39766974975880637,
+      "narrowing_pct": 0.054
+    },
+    "reading": "0.03% narrowing over the whole cohort, and 0.05% for the 328 fetuses with >=4 images where reliability is highest. Both are numerically negligible."
+  },
+  "WHY_IT_IS_STILL_NULL": "two multiplicative penalties. The lag's loading on the size state is only +0.117, so even a NOISELESS lag would contribute b^2/Psi = 0.014 of precision against the biometry channels' combined ~9. On top of that its measurement variance is 3.8-15.1. Information added scales as b^2/variance, which is ~0.001-0.004 -- three orders of magnitude below what biometry supplies.",
+  "THE_HONEST_CONCLUSION": "The reliability correction was real and mattered scientifically -- the lag is not pure noise, and precision weighting is the right way to use it. But it does not rescue the Kalman application: the binding constraint is not reliability, it is that the lag barely loads on the size state at all (r=+0.117). A perfectly measured lag would still add almost nothing to a biometry trajectory, because it is not measuring size.",
+  "what_this_DOES_establish": "the lag is weakly but genuinely associated with fetal size (r=+0.117, n=883), consistent with its rho=+0.21 against birth centile. It is a real if small signal -- just not one that helps estimate a state four biometry measurements already pin down.",
+  "caveats": [
+    "ICC=0.062 is taken from the >=4-image subset and applied to all fetuses; a per-k ICC would be better but the subsets are small",
+    "the lag loading was estimated by correlating the per-fetus lag with the independent-placement size estimate, then reused as a fixed loading -- not jointly estimated with the state",
+    "the lag is a per-fetus constant here, so it informs the state LEVEL but cannot inform its trajectory; a per-visit lag aligned to GA would be the stronger test and the slot indices are not GA-aligned"
+  ]
+}

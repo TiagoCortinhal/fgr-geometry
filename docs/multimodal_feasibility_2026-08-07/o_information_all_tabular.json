@@ -1,0 +1,132 @@
+{
+  "question": "target-free O-information across ALL tabular variables (the full registry, not the 4 defined blocks), cross-sectional and longitudinal",
+  "scope": {
+    "registry_master_numeric": 1013,
+    "above_50pct_coverage": 564,
+    "canonical_panel": 25,
+    "complete_cases_across_all_564": 5,
+    "note": "564 variables clear 50% coverage but only 5 fetuses are complete across all of them, so the full-registry multiplet is not estimable. Variables are taken in coverage rank order. The registry also contains dates, postal codes and coded duplicates -- this is the raw surface, not a curated panel."
+  },
+  "ARTEFACT_CAUGHT": {
+    "first_pass": {
+      "d20": -31.31,
+      "d30": -30.74,
+      "d40": -31.92
+    },
+    "diagnosis": "implausibly large 'synergy'. Condition number of the covariance was 3.8e12 at d>=20 with a NEGATIVE eigenvalue at d=40 -- exact collinearity from algebraically redundant registry columns. Near-zero eigenvalues send the Gaussian log-determinant to -inf and Omega to an arbitrary large negative number.",
+    "estimator_exonerated": "independent gaussian noise at the same n and d gives Omega -0.001 to -0.003 at d=10,20,30,40 -- the estimator is sound; the DATA were rank-deficient.",
+    "fix": "greedy rank filter dropping columns that are near-linear combinations of earlier ones (min eigenvalue > 1e-6)"
+  },
+  "cross_sectional_all_tabular": {
+    "d10": {
+      "kept": 10,
+      "TC": 2.417,
+      "Omega": 0.2854,
+      "verdict": "redundancy"
+    },
+    "d20": {
+      "kept": 18,
+      "TC": 2.809,
+      "Omega": 0.3336,
+      "verdict": "redundancy"
+    },
+    "d30": {
+      "kept": 28,
+      "TC": 6.582,
+      "Omega": 0.527,
+      "verdict": "redundancy"
+    },
+    "d40": {
+      "kept": 38,
+      "TC": 8.321,
+      "Omega": -0.328,
+      "verdict": "synergy"
+    },
+    "d60": {
+      "kept": 57,
+      "TC": 13.714,
+      "Omega": -1.6678,
+      "verdict": "synergy"
+    },
+    "reading": "the raw registry is REDUNDANCY-dominated up to ~30 variables (Omega +0.29 to +0.53) and flips to synergy beyond ~38. That is the opposite of the curated 4-block panel, which sat inside its null band. Unsurprising in hindsight: the registry carries repeated weight/BMI measurements, coded duplicates of the same field, and derived variables -- redundancy by construction, not physiology. The flip at d>=38 should be treated cautiously: min eigenvalue falls to 6e-3 and n/d drops to 17.",
+    "CORRECTION": "coverage-rank ordering selected mostly ADMINISTRATIVE fields: of the top 40, 10 are dates/durations, 4 identifiers, 6 one-hot ethnicity dummies (which sum to 1 by construction), leaving only 20 clinical. The redundancy verdict at d=10-28 therefore reflects clerical structure -- one-hot sets, visit dates collinear with gestational age, duplicate coded fields -- and says nothing about physiology. It remains a valid demonstration that the estimator DETECTS redundancy when redundancy exists, but must not be read as a statement about clinical variables.",
+    "administrative_fraction_top40": 0.5
+  },
+  "within_block_algebraic": {
+    "growth": {
+      "with_efw": -0.1325,
+      "without_efw": 0.0557,
+      "note": "removing EFW flips synergy to redundancy (58% of it)"
+    },
+    "maternal": {
+      "with_bmi": -1.596,
+      "without_bmi": -0.0001,
+      "note": "removing BMI removes 100% of the synergy"
+    },
+    "cardiac": {
+      "with_mpi": -0.2285,
+      "without_mpi": 0.1918,
+      "note": "removing MPI flips the sign"
+    },
+    "reading": "every within-block synergy signal in the canonical panel is an ALGEBRAIC DEPENDENCY, not physiology: EFW is Hadlock(AC,HC,FL,BPD), BMI is weight/height^2, MPI is (ICT+IRT)/ET. Maternal is the cleanest case -- Omega goes from -1.596 to -0.0001. A derived variable is exactly synergistic with its own inputs by construction."
+  },
+  "longitudinal": {
+    "ac_z_ig21": {
+      "visits": 4,
+      "n": 571,
+      "TC": 0.308,
+      "Omega": 0.0701,
+      "verdict": "redundancy"
+    },
+    "hc_z_ig21": {
+      "visits": 4,
+      "n": 576,
+      "TC": 0.309,
+      "Omega": 0.0586,
+      "verdict": "redundancy"
+    },
+    "efw_z_ig21": "n=29 complete across 4 visits -- too few (EFW-z exists for only 41 fetuses at the 20wk node)",
+    "matched_d4_contrast": {
+      "longitudinal_EFW_visits": {
+        "TC": 1.089,
+        "Omega": 0.24,
+        "verdict": "redundancy"
+      },
+      "cross_sectional_4_biometry": {
+        "TC": 0.465,
+        "Omega": 0.0557,
+        "verdict": "redundancy"
+      }
+    },
+    "reading": "repeated visits of the SAME measure are redundancy-dominated, as they must be -- this is the REAL-DATA positive control the simulations could not provide. At matched d=4 the longitudinal multiplet has 2.3x the total correlation and 4.3x the redundancy of four different biometry variables measured once."
+  },
+  "SYNTHESIS": "three regimes, cleanly separated. (1) Repeated measures of one quantity: REDUNDANT, as expected -- the estimator's real-data control. (2) The raw registry: REDUNDANT, but from clerical duplication and derived variables rather than biology. (3) The curated 4-block clinical panel: INSIDE the null band -- neither redundant nor synergistic. That third result is the paper's, and it is now bracketed by two positive controls on the same data rather than standing alone.",
+  "caveats": [
+    "Gaussian closed form -- second-order structure only",
+    "coverage-rank ordering is arbitrary with respect to clinical meaning; the registry includes dates and postal codes",
+    "the d>=38 synergy flip is near the conditioning limit and should not be interpreted without a shrinkage estimator",
+    "zero-imputed, NOT complete-case; verified identical to complete-case at d<=30, and a co-missingness control shows imputation manufactures Omega < 0.002 there. The d>=40 arms involve real filling and remain uninterpretable."
+  ],
+  "CORRECTION_imputation": {
+    "finding": "the artifact said 'complete-case throughout' and called the full-registry multiplet 'not estimable'. Both were wrong descriptions of what ran: every all-tabular Omega was computed on ZERO-IMPUTED data (np.where(isfinite, x, 0.0)) at n=977, not on complete cases.",
+    "does_it_change_the_numbers": "NO, at the dimensions reported. The top-10/20/30 coverage-ranked variables are at or near 100% coverage, so complete-case and zero-filled give IDENTICAL results (d=10 both Omega +0.2854 n=977; d=20 both +0.3336; d=30 both +0.5270). The zero-filling was inert there because there was almost nothing to fill.",
+    "co_missingness_control": {
+      "design": "shuffle values within each column, KEEP the missingness pattern, then zero-fill; any remaining Omega is manufactured by imputation",
+      "d10": {
+        "TC": 0.0286721920937882,
+        "Omega": -0.000206545518980486
+      },
+      "d20": {
+        "TC": 0.09581923768219125,
+        "Omega": -0.0011271459433687125
+      },
+      "d30": {
+        "TC": 0.22511215396790774,
+        "Omega": 0.00012515644637978163
+      },
+      "reading": "co-missingness alone gives Omega -0.0002, -0.0011, +0.0001 against the reported +0.285, +0.334, +0.527. Zero-filling manufactures essentially nothing at these dimensions, so the redundancy signal is real covariance -- albeit clerical covariance among administrative fields."
+    },
+    "what_remains_true": "the d=40 and d=60 arms DO involve real zero-filling (lower-coverage columns enter) and were already flagged as near the conditioning limit; they should not be interpreted. The scope note stands in substance -- only 5 of 977 fetuses are complete across all 564 variables, so the FULL registry multiplet is genuinely not estimable -- but the reported arms used the high-coverage head of that list, where the distinction does not bite.",
+    "method_label_corrected": "zero-imputed at n=977; identical to complete-case at d<=30 because those columns are ~100% covered"
+  }
+}

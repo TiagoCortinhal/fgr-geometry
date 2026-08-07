@@ -1,0 +1,81 @@
+{
+  "question": "does the archived image<->cardiac finding (held-out cc 0.248) reproduce?",
+  "VERDICT": "NO. It does not reproduce, and the 0.248 is recovered only as an UNADJUSTED value.",
+  "what_the_archive_claimed": {
+    "heldout_cc_ladder": {
+      "GA": 0.218,
+      "GA+size": 0.225,
+      "GA+size+biometry": 0.248
+    },
+    "perm_p": 0.0003,
+    "ci": [
+      0.2,
+      0.39
+    ],
+    "note": "reported as STRENGTHENING under adjustment"
+  },
+  "reproduction": {
+    "raw_morphology_7": {
+      "n": 751,
+      "ladder": {
+        "raw": 0.24806422334311104,
+        "GA": 0.018021416550289264,
+        "GA+size": 0.04196622667143183,
+        "GA+size+biometry": 0.04579093736147449
+      },
+      "perm_p": 0.20159680638722555,
+      "null_p95": 0.09000456222054226,
+      "ci": [
+        0.053287467359874024,
+        0.25644343311720297
+      ],
+      "params": [
+        "Circunf_cardiaca",
+        "long_cardiac_left",
+        "long_cardiac_right",
+        "basal_cardiac_left",
+        "basal_cardiac_right",
+        "LV_SI",
+        "RV_SI"
+      ]
+    },
+    "canonical_percentil_11": {
+      "n": 660,
+      "ladder": {
+        "raw": 0.10735382410566893,
+        "GA": 0.10392722530773404,
+        "GA+size": 0.10543186854261326,
+        "GA+size+biometry": 0.09331147679540054
+      },
+      "perm_p": 0.06187624750499002,
+      "null_p95": 0.09764254011516095,
+      "ci": [
+        0.04792834768281157,
+        0.2853848387114336
+      ]
+    },
+    "reading": "the RAW morphology arm reproduces 0.2481 UNADJUSTED -- numerically almost identical to the archived 0.248 -- but it COLLAPSES to 0.018 on GA adjustment and sits at 0.046 fully adjusted (p=0.20). The archive reports 0.248 as the FULLY ADJUSTED value. The percentile-scored panel columns give 0.093 fully adjusted (p=0.062). Neither arm clears its permutation null."
+  },
+  "MECHANISM": {
+    "raw_params_mean_abs_r_with_GA": 0.24819381870797508,
+    "percentile_mean_abs_r_with_GA": 0.03996876039568575,
+    "image_PC1_r_with_GA": -0.276,
+    "per_param": {
+      "Circunf_cardiaca": 0.406,
+      "long_cardiac_left": 0.303,
+      "long_cardiac_right": 0.327,
+      "basal_cardiac_left": 0.289,
+      "basal_cardiac_right": 0.286,
+      "LV_SI": 0.065,
+      "RV_SI": 0.062
+    },
+    "reading": "the raw morphology parameters are UNSCALED measurements in cm -- cardiac circumference and chamber lengths grow with gestation (mean |r| with GA = 0.248, up to 0.33 for long_cardiac_right). Image appearance also encodes GA (PC1 r = -0.276). The unadjusted canonical correlation is therefore a SHARED GESTATIONAL-AGE CHANNEL, not a cardiac-morphology direction. The percentile-scored columns are age-normalised by construction (mean |r| = 0.040) and show no such inflation."
+  },
+  "CAUTION": "this is a failure to reproduce with the tooling and cohort available now, NOT proof the original was wrong. Differences I could not fully reconstruct: the original may have used a different image representation, a regularised CCA variant, or a different fetus-level split. But the GA mechanism is measurable and sufficient to explain a 0.248 unadjusted value, and the coincidence of that exact number appearing unadjusted here is hard to ignore.",
+  "IMPLICATION": "the cardiac direction should NOT be built into a paper until this discrepancy is resolved.",
+  "caveats": [
+    "7 raw params chosen by name-matching the archived description; the exact original set is not recorded in a machine-readable form",
+    "cardiac coverage forces n=751 (raw) and n=660 (percentile) rather than the full 977",
+    "500 permutations and 200 bootstrap draws -- adequate for a p around 0.2, not for a small one"
+  ]
+}

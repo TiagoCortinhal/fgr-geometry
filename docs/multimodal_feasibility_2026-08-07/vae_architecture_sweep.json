@@ -1,0 +1,50 @@
+{
+  "question": "was the VAE's loss due to a wrong architecture?",
+  "method": "both arms given hyperparameter selection on HELD-OUT MASKED-CELL LOG-LIKELIHOOD (never on coverage), then one comparison at the selected point. VAE grid K x beta x hidden = 3x3x2; FA grid K in {4,6,8,10,12}.",
+  "selection": {
+    "VAE": {
+      "K": 16,
+      "beta": 0.1,
+      "h": 64,
+      "ep": 2000
+    },
+    "VAE_ll": -1.0287,
+    "FA": {
+      "K": 12
+    },
+    "FA_ll": -0.9572,
+    "reading": "FA WINS THE SELECTION CRITERION ITSELF: -0.957 vs -1.029 held-out log-likelihood, before coverage is measured. The best VAE in an 18-point grid reconstructs hidden cells worse than a linear-Gaussian factor model."
+  },
+  "gate_at_selected_settings": {
+    "planted_nonlinear_0p10": -0.0443,
+    "planted_nonlinear_0p30": 0.0168,
+    "FAILS": true,
+    "reading": "the nonlinear positive control BARELY passes at planted 0.30 (+0.017) and FAILS at 0.10 (-0.044). This is the gate my earlier run never executed at the settings it reported. The selected VAE cannot reliably recover known nonlinear structure at n=977."
+  },
+  "coverage": {
+    "VAE": {
+      "c95": 0.9747634069400631,
+      "c90": 0.9205047318611987
+    },
+    "FA": {
+      "c95": 0.9768664563617245,
+      "c90": 0.9270241850683492
+    },
+    "nominal": [
+      0.95,
+      0.9
+    ],
+    "total_abs_deviation": {
+      "VAE": 0.0453,
+      "FA": 0.0539
+    },
+    "reading": "after tuning, the two are nearly identical: VAE 0.975/0.921, FA 0.977/0.927. BOTH OVER-COVER. The VAE is marginally closer to nominal (total deviation 0.045 vs 0.054) -- a difference far smaller than the tuning freedom given to it."
+  },
+  "ANSWER": "Partly yes, and it changes the verdict from 'marginalisation wins' to 'they tie'. Tuning moved the VAE from 0.963/0.904 to 0.975/0.921, essentially onto FA's numbers. But it does NOT rescue the deep model: FA beats it on the selection criterion (-0.957 vs -1.029), and the selected VAE fails its own nonlinear positive control at planted R2=0.10.",
+  "for_the_paper": "the defensible sentence is a TIE, not a win: 'marginalisation was compared against chained equations and a masked variational autoencoder, each given the same masked data and its own hyperparameter selection; all three produce intervals close to nominal, and neither alternative improves on marginalisation.' Do not claim the VAE is worse-calibrated -- on these numbers it is not.",
+  "caveats": [
+    "one seed per configuration; the earlier diagnostic runs showed ~0.05 R2 of seed noise on this setup, so small differences here are not resolvable",
+    "selection used a single train/validation split, not nested CV -- the selected point is itself somewhat noisy",
+    "FA's selected K=12 differs from the paper's K=8, so this comparison is not the paper's model"
+  ]
+}

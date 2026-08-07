@@ -1,0 +1,37 @@
+{
+  "question": "can the image lag's within-fetus noise be fixed, and how was the within>between claim measured?",
+  "CORRECTION_TO_MY_EARLIER_CLAIM": "I reported within-fetus SD 1.784 vs between-fetus SD 1.260, ratio 1.42. That comparison was flawed twice: the within term used only the 328 fetuses with >=4 images while the between term used all 908, and the between term was computed on per-fetus MEANS, which are already shrunk by averaging. The correct decomposition is far more extreme, not less.",
+  "variance_decomposition": {
+    "method": "one-way random-effects ANOVA on 2,753 lag observations across 883 fetuses over 12 slots, unbalanced (k0=3.116)",
+    "MSB": 4.935671244969349,
+    "MSW": 6.369109153747559,
+    "ratio": 0.7749,
+    "between_fetus_variance": 0.0,
+    "within_fetus_variance": 6.3691,
+    "within_SD": 2.524,
+    "ICC": "0.000 -- INVALID: the pooled one-way ANOVA mixes single-image fetuses (lag variance 0.98) with repeated-measure fetuses (6.54). Restricted estimates are 0.027-0.076.",
+    "reading": "MSB (4.94) is LESS than MSW (6.37), so the between-fetus variance component is NEGATIVE and clips to zero. ICC = 0.000. Two images of the SAME fetus differ more than two images of DIFFERENT fetuses. This is not a small between-fetus signal -- it is none.",
+    "n_observations": 2753,
+    "n_fetuses": 883
+  },
+  "positive_control": {
+    "planted_0p30_recovered": 0.28,
+    "planted_0p05_recovered": 0.032,
+    "PASSES": true,
+    "reading": "the same estimator recovers planted ICCs of 0.30 and 0.05 correctly, so the 0.000 is the data, not the estimator"
+  },
+  "is_it_fixable": {
+    "route_1_more_images_per_fetus": "NO. Spearman-Brown reliability is k*ICC/(1+(k-1)*ICC); with ICC=0 this is 0 for every k. Averaging 100 images per fetus still gives reliability 0.",
+    "route_2_precision_weighting": "NO. Weighting by 1/k in a Kalman assumes a true per-fetus value exists to estimate. With ICC=0 there is no between-fetus signal to weight toward.",
+    "route_3_remove_time_slot": "NO. ICC after removing the slot mean is still 0.0000. Slot means range -0.50 to +0.44 (SD 0.649) against an overall lag SD of 2.43, so acquisition order explains little and removing it changes nothing.",
+    "route_4_per_plane_clocks": "UNTESTED and the only remaining candidate. Slot-0 lag SD is 4.04 against 1.54-1.81 for later slots, so early frames are much noisier -- plausibly plane or image-quality heterogeneity. This is the one route the data have not ruled out."
+  },
+  "WHY_THE_POOLED_LAG_STILL_CORRELATES_WITH_ANYTHING": "this is the important tension. The per-fetus mean lag does correlate with birth centile (rho +0.21) and with tabular variables (R2 0.032), yet ICC=0 says the per-fetus mean is pure noise. Both cannot be true of the SAME quantity. The most likely resolution: the signal lives in a between-fetus component that this one-way decomposition assigns to 'within' because the 12 slots are not comparable measurements -- they mix gestational ages, planes and image counts. A slot is not a repeated measure of the same thing.",
+  "VERDICT": "The within>between claim is CORRECT and stronger than I first reported (ICC=0.000, not a ratio of 1.42), and it is NOT fixable by more images, precision weighting, or removing acquisition order. But the ICC=0 result and the lag's real correlations are in tension, which means the slot-level lag is not a clean repeated measure and the decomposition may be answering the wrong question. Either way, a Kalman channel on the slot-level lag is not supportable.",
+  "caveats": [
+    "the 12 'slots' are index positions, not aligned gestational ages -- treating them as repeated measures of one quantity is the assumption the ICC rests on, and it may be the wrong one",
+    "per-plane clocks remain untested and are the one route that could recover reliability"
+  ],
+  "CORRECTION_sample_size": "an earlier version of this file stated N=2,627. That was the sum of the first EIGHT slot rows visible in a truncated printout, not the observation count, which was never printed. The true N is 2,753 over all 12 slots; k0=3.116 confirms it (N=2,627 would cap k0 at 2.975). MSB, MSW and ICC are unaffected -- they were computed on the full data.",
+  "SUPERSEDED": "the ICC=0.000 and the 'not fixable' verdict in this file are WRONG. See lag_reliability_corrected.json: the pooled ANOVA mixes two populations with a 6.7x variance difference, violating its homogeneity assumption. Restricted to fetuses with repeated measures the ICC is 0.027-0.076, and assumption-free split-half reliability is 0.27-0.53 depending on image count. Precision weighting and a Kalman channel are viable after all."
+}

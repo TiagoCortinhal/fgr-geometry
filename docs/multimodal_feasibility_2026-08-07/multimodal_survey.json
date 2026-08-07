@@ -1,0 +1,325 @@
+{
+  "question": "in-depth assessment: is there ANY multimodal signal between images and the tabular registry?",
+  "design": "477 individual registry variables (from 1431 columns / 1013 numeric, after euro-decimal parsing, dropping administrative fields, >=60% coverage, >=3 levels), each tested separately against pooled-USFM image PCs. Held-out ridge on 10 image PCs, 5-fold, BOTH sides residualised on GA + EFW + 5 biometry z-scores. Plus a block-level arm with the full adjustment ladder and permutation nulls.",
+  "block_level": {
+    "growth": {
+      "n": 905,
+      "ga_leak": 0.10529430187350046,
+      "ladder": {
+        "raw": 0.2282279340626813,
+        "GA": 0.2333963062034606,
+        "GA+size": -0.033590740575496505,
+        "+biom": -0.17931973500010767
+      },
+      "p": 1.0,
+      "null_p95": 0.06983892334240034,
+      "vars": [
+        "ac_z_ig21",
+        "hc_z_ig21",
+        "bpd_z_ig21",
+        "fl_z_ig21",
+        "efw_z_ig21"
+      ]
+    },
+    "maternal": {
+      "n": 913,
+      "ga_leak": 0.03604269346110452,
+      "ladder": {
+        "raw": 0.41116875354680377,
+        "GA": 0.4095263218697939,
+        "GA+size": 0.3870731045607771,
+        "+biom": 0.38438922387982893
+      },
+      "p": 0.0024937655860349127,
+      "null_p95": 0.07518982458666536,
+      "vars": [
+        "maternal_age",
+        "maternal_height_cm",
+        "maternal_weight_kg",
+        "maternal_bmi"
+      ]
+    },
+    "Doppler": {
+      "n": 899,
+      "ga_leak": 0.22158310079502544,
+      "ladder": {
+        "raw": 0.3035260320098459,
+        "GA": -0.060027258062817966,
+        "GA+size": -0.047028717250133426,
+        "+biom": -0.040028411534926644
+      },
+      "p": 0.7830423940149626,
+      "null_p95": 0.08525701003513594,
+      "vars": [
+        "Percentil_AU",
+        "Percentil_UTA",
+        "Percentil_ACM",
+        "Percentil_CPR",
+        "Percentil_DV"
+      ]
+    },
+    "cardiac": {
+      "n": 660,
+      "ga_leak": 0.047535825458166175,
+      "ladder": {
+        "raw": 0.10735382410566893,
+        "GA": 0.10392722530773404,
+        "GA+size": 0.10543186854261326,
+        "+biom": 0.09331147679540054
+      },
+      "p": 0.06733167082294264,
+      "null_p95": 0.10064483431276933,
+      "vars": [
+        "Percentil_MPI",
+        "Percentil_Tapse",
+        "Percentil_Mapse",
+        "Percentil_Sapse",
+        "Percentil_RV_longitudinal",
+        "Percentil_LV_longitudinal",
+        "Percentil_RV_basal",
+        "Percentil_LV_basal",
+        "Percentil_ICTms",
+        "Percentil_ETms",
+        "Percentil_IRTms"
+      ]
+    },
+    "cardiac RAW morph": {
+      "n": 751,
+      "ga_leak": 0.24172563270747807,
+      "ladder": {
+        "raw": 0.2226270911648908,
+        "GA": 0.07034445388801613,
+        "GA+size": 0.10663870860470695,
+        "+biom": 0.10358559962665384
+      },
+      "p": 0.034912718204488775,
+      "null_p95": 0.09623647742927163,
+      "vars": [
+        "Circunf_cardiaca",
+        "long_cardiac_left",
+        "long_cardiac_right",
+        "basal_cardiac_left",
+        "basal_cardiac_right",
+        "LV_SI",
+        "RV_SI"
+      ]
+    }
+  },
+  "wide_screen": {
+    "n_variables": 477,
+    "median_r": -0.004695949409399109,
+    "frac_above_0p15": 0.07337526205450734,
+    "top_hits": [
+      {
+        "var": "Vis1TR_BMI",
+        "r": 0.49278366382832023,
+        "n": 787,
+        "ga_leak": 0.033987961918006286,
+        "cat": "maternal habitus"
+      },
+      {
+        "var": "BMIpreprgnacy1",
+        "r": 0.49176579643633167,
+        "n": 913,
+        "ga_leak": 0.03514136299723979,
+        "cat": "maternal habitus"
+      },
+      {
+        "var": "BMIpre",
+        "r": 0.49176579643633167,
+        "n": 913,
+        "ga_leak": 0.03514136299723979,
+        "cat": "maternal habitus"
+      },
+      {
+        "var": "Vis3TR_BMI",
+        "r": 0.48433666023876115,
+        "n": 804,
+        "ga_leak": 0.018921226969665344,
+        "cat": "maternal habitus"
+      },
+      {
+        "var": "Vis2TR_BMI",
+        "r": 0.4704078403954513,
+        "n": 882,
+        "ga_leak": 0.021839071243927477,
+        "cat": "maternal habitus"
+      },
+      {
+        "var": "Weight_prepregnancy1",
+        "r": 0.4680616467532947,
+        "n": 913,
+        "ga_leak": 0.0168625810850406,
+        "cat": "maternal habitus"
+      },
+      {
+        "var": "Peso0",
+        "r": 0.4680616467532947,
+        "n": 913,
+        "ga_leak": 0.0168625810850406,
+        "cat": "maternal habitus"
+      },
+      {
+        "var": "INIC_VisNutri_BMI",
+        "r": 0.4602730331170308,
+        "n": 882,
+        "ga_leak": 0.011115311092455398,
+        "cat": "maternal habitus"
+      },
+      {
+        "var": "Vis1.5TR_Weight",
+        "r": 0.45515119088388173,
+        "n": 785,
+        "ga_leak": 0.0031086972591165495,
+        "cat": "maternal habitus"
+      },
+      {
+        "var": "Vis1TR_Weight",
+        "r": 0.45479117122894636,
+        "n": 787,
+        "ga_leak": 0.011613862010353648,
+        "cat": "maternal habitus"
+      },
+      {
+        "var": "INIC_VisNutri_peso",
+        "r": 0.44556375333845694,
+        "n": 884,
+        "ga_leak": 0.007717257064577832,
+        "cat": "maternal habitus"
+      },
+      {
+        "var": "Vis2TR_weight",
+        "r": 0.44426019771959924,
+        "n": 869,
+        "ga_leak": 0.0066795895915343585,
+        "cat": "maternal habitus"
+      },
+      {
+        "var": "Vis3TR_weight",
+        "r": 0.4435982984956043,
+        "n": 834,
+        "ga_leak": 0.01745478640668236,
+        "cat": "maternal habitus"
+      },
+      {
+        "var": "FIN_VisNutri_peso",
+        "r": 0.4435982984956043,
+        "n": 834,
+        "ga_leak": 0.01745478640668236,
+        "cat": "maternal habitus"
+      },
+      {
+        "var": "INIC_VisNutri_cintura",
+        "r": 0.4430704204763616,
+        "n": 853,
+        "ga_leak": 0.047858774265541186,
+        "cat": "maternal habitus"
+      },
+      {
+        "var": "INIC_VisNutri_cintura_eco",
+        "r": 0.4430704204763616,
+        "n": 853,
+        "ga_leak": 0.047858774265541186,
+        "cat": "maternal habitus"
+      },
+      {
+        "var": "FIN_VisNutri_BMI",
+        "r": 0.42580778435123595,
+        "n": 809,
+        "ga_leak": 0.008450730442782446,
+        "cat": "maternal habitus"
+      },
+      {
+        "var": "Cortical_grading_Temporal",
+        "r": 0.36259844275441694,
+        "n": 893,
+        "ga_leak": 0.4630635505689364,
+        "cat": "acquisition quality/position"
+      }
+    ],
+    "category_of_top50": {
+      "maternal habitus": 20,
+      "acquisition quality/position": 4,
+      "other clinical": 26
+    }
+  },
+  "FINDING_1_habitus_dominates": {
+    "best": {
+      "var": "Vis1TR_BMI",
+      "r": 0.493
+    },
+    "all_habitus_variants": [
+      "Vis1TR_BMI 0.493",
+      "BMIpreprgnacy1 0.492",
+      "BMIpre 0.492",
+      "Vis3TR_BMI 0.484",
+      "Vis2TR_BMI 0.470",
+      "Weight_prepregnancy1 0.468",
+      "Peso0 0.468",
+      "INIC_VisNutri_BMI 0.460",
+      "Vis1.5TR_Weight 0.455",
+      "INIC_VisNutri_cintura 0.443 (waist)"
+    ],
+    "block_level": {
+      "maternal_block_adjusted": 0.384,
+      "p": 0.002,
+      "n": 913,
+      "decomposition": {
+        "bmi_alone": 0.491,
+        "weight_alone": 0.468,
+        "age_alone": 0.038,
+        "height_alone": 0.062
+      },
+      "image_PC3_r_with_BMI": 0.38,
+      "after_residualising_images_on_BMI": -0.014
+    },
+    "reading": "the single strongest image<->tabular signal in the entire registry is MATERNAL BODY HABITUS -- BMI, weight and waist circumference, in ten near-duplicate encodings occupying the top of the ranking. It is an ACQUISITION CONFOUND: higher BMI degrades ultrasound penetration, so the encoder reads maternal habitus off image quality. Residualising the images on BMI collapses the whole maternal block from +0.384 to -0.014."
+  },
+  "FINDING_2_best_non_habitus_also_collapses": {
+    "variable": "Vis3TR_MAP (third-trimester mean arterial pressure)",
+    "bp_vs_bmi_r": 0.332,
+    "ladder": {
+      "GA+size+biometry": 0.215,
+      "+BMI": 0.046,
+      "+BMI,presentation": 0.045,
+      "+BMI,presentation,echo quality": 0.037
+    },
+    "perm_p": 0.12219451371571072,
+    "null_p95": 0.05839427471196899,
+    "reading": "blood pressure is the strongest non-habitus hit at 0.215, but BP correlates 0.332 with BMI and the signal collapses to 0.046 the moment BMI enters the adjustment, ending at 0.037 (p=0.12) with presentation and echo quality also removed. Same confound."
+  },
+  "FINDING_3_blocks": {
+    "growth": {
+      "adjusted": -0.179,
+      "p": 1.0
+    },
+    "maternal": {
+      "adjusted": 0.384,
+      "p": 0.002
+    },
+    "Doppler": {
+      "adjusted": -0.04,
+      "p": 0.783,
+      "ga_leak": 0.222
+    },
+    "cardiac_percentile": {
+      "adjusted": 0.093,
+      "p": 0.067
+    },
+    "cardiac_raw_morphology": {
+      "adjusted": 0.104,
+      "p": 0.035,
+      "ga_leak": 0.242,
+      "note": "marginal, and this block has the highest GA leakage after Doppler"
+    },
+    "reading": "only maternal clears its null decisively, and maternal is the confound"
+  },
+  "ANSWER": "On this cohort there is NO clinically meaningful multimodal signal between the images and the tabular registry. Of 477 variables the median adjusted correlation is -0.005 and only 7.3% exceed 0.15. Every hit that clears a null decomposes into two acquisition properties -- maternal body habitus (which sets image quality) and, weakly, fetal presentation and echo quality grading. Once BMI is removed from the image representation, nothing survives.",
+  "WHAT_THIS_IS_WORTH": "this is a real and reportable negative result, and it is stronger than the earlier block-level nulls because it is exhaustive rather than selective: not 'we tried five methods' but 'we tested every tabular variable in the registry individually'. It also identifies WHAT the frozen encoder does encode -- acquisition conditions -- which is a useful caution for anyone applying foundation-model embeddings to clinical ultrasound.",
+  "caveats": [
+    "screen is univariate per variable; a multivariate combination could in principle carry signal none of the parts do, though the block-level arm tested exactly that and found only maternal",
+    "no BH correction applied to the screen itself -- it is used as a ranking, and every candidate was then tested individually with permutation nulls, which is the safer order",
+    "pooled per-fetus image representation; a plane-specific or region-specific representation is untested",
+    "477 of 1013 numeric columns survive the coverage and level filters; low-coverage variables are unrepresented"
+  ]
+}

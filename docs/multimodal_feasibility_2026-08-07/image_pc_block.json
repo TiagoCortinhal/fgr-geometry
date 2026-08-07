@@ -1,0 +1,60 @@
+{
+  "question": "does a multi-PC image block work better than the single lag -- and does it fix the singleton objection?",
+  "construction": "per-fetus mean USFM emb_l5 over that fetus's IMPACT frames (918 fetuses, 94.0% coverage), PCA to 5 components (89.1% of embedding variance; PC1 alone 71.1%)",
+  "finding_1_the_singleton_fix_FAILS": {
+    "image_within_block_r2": -0.0071449039212489575,
+    "per_pc": [
+      -0.006,
+      -0.007,
+      -0.008,
+      -0.007,
+      -0.009
+    ],
+    "tabular_within_reference": 0.5083865218089854,
+    "reading": "THE PREMISE OF THIS EXPERIMENT IS WRONG. Within-block R2 for the image PCs is -0.007 -- every PC is at or below zero. PCA components are ORTHOGONAL BY CONSTRUCTION, so a PC block has no within-block redundancy to reconstruct from, by definition. It looks like a 5-variable block but behaves as five singletons. The tabular blocks reach 0.508. This does NOT fix the objection the agent raised about the single lag; it reproduces it five times."
+  },
+  "finding_2_cross_block_rises": {
+    "image_cross_block": 0.05817474062272263,
+    "per_pc": [
+      0.069,
+      0.051,
+      0.129,
+      0.026,
+      0.016
+    ],
+    "tabular_reference": 0.03866992826841502,
+    "reading": "image-PC cross-block R2 is 0.058, ABOVE the tabular 0.039 -- the first image representation to exceed the tabular budget. Driven almost entirely by PC3 at 0.129."
+  },
+  "finding_3_what_PC3_actually_is": {
+    "top_correlates": {
+      "maternal_bmi": 0.34,
+      "maternal_weight_kg": 0.32,
+      "efw_z_ig21": 0.2,
+      "fl_z_ig21": 0.18
+    },
+    "correlation_with_the_lag": 0.112,
+    "reading": "PC3 IS MATERNAL HABITUS, NOT FETAL PHYSIOLOGY. It correlates 0.34 with maternal BMI and 0.32 with maternal weight -- higher BMI degrades ultrasound image quality (attenuation, depth), so the encoder is reading acquisition conditions. Its correlation with the maturation lag is only 0.11. The 'gain' in cross-block R2 is the image block predicting how heavy the mother is."
+  },
+  "finding_4_acquisition_artefact": {
+    "PC4_vs_n_images": 0.338,
+    "reading": "PC4 correlates 0.34 with the NUMBER of images acquired for that fetus -- another acquisition artefact, not biology"
+  },
+  "factor_structure": {
+    "image_pc_max_loadings": [
+      0.14377383413086564,
+      0.11294599001711399,
+      0.34904732206353806,
+      0.13774354484602833,
+      0.09761197511670303
+    ],
+    "single_lag_reference": 0.12,
+    "reading": "PC3 reaches loading 0.35, the others 0.10-0.14. So an image PC DOES enter the latent -- but it is the maternal-habitus one."
+  },
+  "VERDICT": "Worse than the lag, not better. The multi-PC block fails on its own motivation (PCs cannot have within-block structure), and the extra cross-block signal it appears to buy is maternal body habitus and image count -- acquisition conditions the encoder can read off the pixels. Putting this in the paper would mean claiming an image block that is partly a maternal-BMI proxy.",
+  "what_would_actually_work": "a NON-orthogonal image summary with genuine within-block redundancy -- e.g. per-plane pooled embeddings (cerebral / abdominal / femur separately), or a small set of correlated radiomics families. Those would be a real block. PCs never can be.",
+  "caveats": [
+    "PC1 is 71% of variance and correlates with nothing tabular (max |rho| ~0.1), consistent with the earlier finding that PC1 is the maturation axis",
+    "5 PCs chosen a priori at 89% variance; not swept",
+    "coverage 94% is higher than the lag's 90.4% because it needs only one image, not a datable visit"
+  ]
+}

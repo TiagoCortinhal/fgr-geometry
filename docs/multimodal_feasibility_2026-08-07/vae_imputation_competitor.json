@@ -1,0 +1,50 @@
+{
+  "question": "does a masked VAE on 26 inputs (25 tabular + image lag) beat marginalisation at reconstructing an absent Doppler panel?",
+  "design": "52-dim input (26 standardised values + 26 mask bits), encoder -> q(z) with K=8, decoder with mean AND log-variance heads, masked-cell Gaussian NLL + beta*KL. Per fold the whole Doppler block is masked BEFORE fitting, so both arms see identical information -- the defect that inverted the earlier MICE comparison when the auditor caught it.",
+  "positive_control": {
+    "first_attempt_FAILED": {
+      "beta": 1.0,
+      "epochs": 400,
+      "planted_0p10": -0.0389,
+      "planted_0p30": -0.0419
+    },
+    "diagnosis": "posterior collapse from beta=1.0 plus undertraining, NOT a power limit. A LINEAR planted signal -- which any working VAE must recover -- also failed, which is what identified the setup rather than the data as the problem.",
+    "after_fix": {
+      "beta": 0.01,
+      "epochs": 2000,
+      "planted_linear_0p30": 0.2542,
+      "planted_nonlinear_0p30": "NOT RUN at these settings"
+    },
+    "note": "settings were fixed from the control BEFORE any real-data comparison was computed",
+    "PASSES": "LINEAR only; nonlinear gate not executed at the comparison settings"
+  },
+  "coverage_equal_information": {
+    "VAE": {
+      "n": 4755,
+      "cov95": 0.9627760252365931,
+      "cov90": 0.9043112513144059
+    },
+    "marginalisation": {
+      "n": 4755,
+      "cov95": 0.9743427970557308,
+      "cov90": 0.9272344900105153
+    },
+    "nominal": [
+      0.95,
+      0.9
+    ],
+    "verdict": "Both arms over-cover. VAE 0.963/0.904 sits closer to nominal 0.95/0.90 than FA 0.974/0.927. Neither is under-covered; the paper's claim that marginalisation is conservative holds, and the VAE is if anything tighter."
+  },
+  "CONCLUSION": "SUPERSEDED pending the pre-declared sweep. The comparison is not decidable from a single architecture, and my calibration reading of it was inverted.",
+  "caveats": [
+    "single architecture (64-64 hidden, K=8) and one seed per fold; no architecture sweep",
+    "beta and epochs were chosen on the PLANTED control, not on the real comparison -- that is the right direction of tuning but it is still tuning",
+    "the VAE's latent is a point-sampled posterior over 977 rows with ~7k parameters; the earlier finding in this project that a VAE's apparent latent richness was overfitting applies here too"
+  ],
+  "CORRECTIONS": {
+    "c1_calibration_reading_inverted": "I wrote that the VAE was UNDER-covered and marginalisation better calibrated. Both are wrong on the stored numbers. Nominal 0.95/0.90. VAE 0.963/0.904 is ABOVE nominal (conservative) and deviates +1.3pp/+0.4pp. FA 0.974/0.927 deviates +2.4pp/+2.7pp. By closeness to nominal the VAE is the BETTER-calibrated of the two; by conservatism FA errs further to the safe side. Neither is under-covered.",
+    "c2_control_never_run_at_gate_settings": "after_fix recorded planted_nonlinear=0.193 under beta=0.01/2000 epochs. That value is from beta=0.1/6000 epochs. The nonlinear control was NEVER run at the settings used for the comparison (beta=0.01, 2000 epochs). Only the LINEAR control (0.254) was.",
+    "c3_undertraining_claim_false": "I diagnosed 'posterior collapse plus undertraining'. The epoch sweep at beta=1.0 gives 400ep +0.197, 2000ep +0.134, 6000ep +0.075 -- MORE epochs was monotonically WORSE. 400 epochs was the best of the three. The collapse diagnosis stands (beta drives it); the undertraining half is contradicted by my own sweep.",
+    "c4_diagnostic_noise": "two identical beta=1.0/2000-epoch runs gave +0.1335 and +0.0849 because the numpy RNG was not reset between them. Single-run diagnostics carry ~0.05 R2 of noise, comparable to some differences I interpreted."
+  }
+}

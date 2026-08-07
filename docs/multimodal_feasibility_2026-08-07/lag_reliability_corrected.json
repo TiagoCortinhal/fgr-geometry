@@ -1,0 +1,97 @@
+{
+  "question": "is the lag's ICC really zero, and can the within-fetus noise be fixed?",
+  "RETRACTION": "I reported ICC = 0.000 and concluded the lag has no stable per-fetus value, unfixable by averaging or weighting. THAT WAS WRONG. Split-half reliability -- which makes no ANOVA assumptions -- is clearly non-zero and rises with the number of images.",
+  "test2_split_half": {
+    "design": "mean of a fetus's even-numbered images vs mean of its odd-numbered images; Spearman-Brown corrects half-length to full-length",
+    "by_min_images": {
+      "2": {
+        "n": 484,
+        "r": 0.064,
+        "SB": 0.12
+      },
+      "4": {
+        "n": 327,
+        "r": 0.259,
+        "SB": 0.412
+      },
+      "6": {
+        "n": 144,
+        "r": 0.362,
+        "SB": 0.532
+      }
+    },
+    "random_halves": {
+      "n": 328,
+      "r": 0.159,
+      "ci": [
+        0.09,
+        0.237
+      ],
+      "SB": 0.274
+    },
+    "reading": "reliability is real and increases with k exactly as measurement theory predicts: 0.12 at k>=2, 0.41 at k>=4, 0.53 at k>=6. A quantity with zero reliability cannot do this."
+  },
+  "test1_heteroscedasticity": {
+    "slot_SDs": {
+      "0": 4.04,
+      "1": 2.49,
+      "2": 1.81,
+      "3": 1.54,
+      "4": 1.69,
+      "5": 1.64,
+      "6": 2.01,
+      "7": 1.72
+    },
+    "icc_all_slots": 0.0,
+    "icc_drop_slot0": 0.0,
+    "icc_drop_slots01": 0.0,
+    "icc_slots_2to5": 0.0,
+    "icc_per_slot_standardised": 0.0,
+    "verdict": "NOT the explanation. Dropping the high-variance early slots, or variance-standardising per slot, leaves ICC at exactly 0.0000 in every variant."
+  },
+  "THE_REAL_CAUSE": {
+    "single_image_fetuses": 353,
+    "of_total": 883,
+    "pct": 40,
+    "icc_restricted": {
+      "all": 0.0,
+      ">=2 img": 0.0266,
+      ">=3": 0.0431,
+      ">=4": 0.062,
+      ">=6": 0.0763
+    },
+    "positive_control_on_subset": {
+      "planted_0.30": 0.3147,
+      "planted_0.10": 0.0698
+    },
+    "reading": "40% of fetuses (353 of 883) have exactly ONE image. They carry zero within-fetus information but still enter MSB, diluting the between-fetus mean square while contributing nothing to MSW. Restricting to fetuses that actually have repeated measures gives ICC 0.027 -> 0.043 -> 0.062 -> 0.076 as the minimum image count rises. The positive control on the same unbalanced design recovers planted 0.30 and 0.10 correctly, so the estimator is fine -- the POPULATION was wrong.",
+    "SUPERSEDED": "see CORRECTION_to_THE_REAL_CAUSE -- the dilution mechanism is not supported"
+  },
+  "CORRECTED_ANSWER": "The lag DOES have a stable per-fetus component; it is just small and heavily measurement-limited. Single-image ICC is roughly 0.03-0.08, but the reliability of a fetus's MEAN rises with k: ~0.41 at four images, ~0.53 at six. This resolves the tension I flagged -- a per-fetus mean with reliability 0.3-0.5 CAN correlate with birth centile at rho=+0.21, whereas one with reliability 0 could not.",
+  "SO_WHAT_CAN_BE_DONE": [
+    "PRECISION WEIGHTING IS BACK ON THE TABLE. With ICC>0 and k varying 1-12, weighting each fetus by its own reliability (or a Kalman with per-visit variance sigma^2/k) is now well-motivated, not futile.",
+    "RESTRICT OR WEIGHT BY COVERAGE. The 223 fetuses with >=5 images have roughly 3x the reliability of the median fetus. An analysis on them trades n for measurement quality.",
+    "DISATTENUATION. Observed correlations are capped at sqrt(reliability); at ~0.41 the ceiling is 0.64, so the measured latent->lag R2 of 0.033 is an underestimate of the true association.",
+    "PER-PLANE CLOCKS (still untested) remain the route to raise single-image reliability at source."
+  ],
+  "caveats": [
+    "ICC 0.03-0.08 is still small in absolute terms -- this rescues the lag from 'pure noise' to 'weak and measurement-limited', not to 'strong'",
+    "the >=k subsets are progressively selected populations; fetuses with many images may differ systematically (more scans often means more clinical concern)",
+    "split-half by slot parity could confound with acquisition order; the random-half version (0.274) is the more conservative estimate and is the one I would quote"
+  ],
+  "CORRECTION_to_THE_REAL_CAUSE": {
+    "what_I_claimed": "ICC=0 is an artefact of 353 single-image fetuses diluting MSB; 'the estimator was fine, the population was wrong'",
+    "why_that_was_unsupported": "my only control simulated the >=4-image subset, which contains NO singletons, so it could not test the mechanism it was cited for. A proper control on the FULL k-distribution (singletons included) recovers planted ICC 0.30->0.280, 0.10->0.080, 0.05->0.043 -- the estimator handles singletons correctly. Dilution is NOT the explanation.",
+    "what_the_data_actually_show": {
+      "singleton_lag_variance": 0.981,
+      "repeated_lag_variance": 6.543,
+      "ratio": 0.15,
+      "singleton_mean": 0.74,
+      "repeated_mean": -0.109,
+      "singleton_slot0_fraction": 0.0,
+      "repeated_slot0_fraction": 0.196,
+      "reading": "single-image fetuses are a STRUCTURALLY DIFFERENT population, not a diluting one. Their lag variance is 0.98 against 6.54 for repeated-measure fetuses (0.15x), their mean is +0.74 against -0.11, and NONE of them sit in slot 0 -- the noisiest slot. Pooling two populations with a 6.7x variance difference and different means violates the one-way ANOVA's homogeneity assumption outright. The ICC=0 is a MIXTURE artefact, not a dilution artefact."
+    },
+    "corrected_status": "the numbers stand: ICC=0.000 pooled, 0.027-0.076 restricted, split-half 0.27-0.53. The CAUSAL ATTRIBUTION is corrected -- the pooled ANOVA is invalid because it mixes two populations with very different variances, not because singletons dilute MSB. The practical conclusion is unchanged: use the restricted/split-half estimates, which agree with each other."
+  }
+}

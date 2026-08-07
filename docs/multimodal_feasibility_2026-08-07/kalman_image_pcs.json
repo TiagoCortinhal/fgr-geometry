@@ -1,0 +1,49 @@
+{
+  "question": "feed image PCs directly as Kalman channels instead of computing a lag -- was this tried?",
+  "what_had_been_tried": "PCs had been tested against GBTM regions (cumulative dim 1-8 and single PC1-8, all no change) and as a 5-variable block in the cross-sectional factor panel (image_pc_block.json). PCs had NEVER been fed to the Kalman as measurement channels -- that is what this run does.",
+  "decisive_structural_finding": {
+    "image_visits": 922,
+    "fetuses": 908,
+    "visits_per_fetus": {
+      "1": 894,
+      "2": 14
+    },
+    "pct_single_visit": 0.985,
+    "images_per_visit_median": 22,
+    "reading": "98.5% of fetuses have exactly ONE image study-date. Grouping images by (fetus, study_date) and aligning to true GA gives 922 visits across 908 fetuses. So PCs CANNOT form an image trajectory either -- IMPACT imaging is single-session. This is the same wall the lag hit, confirmed on a different construction, and it is a property of the acquisition protocol."
+  },
+  "loadings_on_size_state": {
+    "raw": {
+      "PC1": 0.008451114867946714,
+      "PC2": -0.05208066057290382,
+      "PC3": 0.08433117380324054,
+      "PC4": -0.02472063400504958,
+      "PC5": 0.13187006480840274
+    },
+    "bmi_residualised": {
+      "PC1": -0.002278067843394004,
+      "PC2": -0.05099626769689825,
+      "PC3": 0.08037514566033292,
+      "PC4": -0.0038615741297123333,
+      "PC5": 0.11734050489112893
+    },
+    "lag_reference": 0.117,
+    "reading": "PC5 loads +0.132 raw and +0.117 after BMI residualisation -- essentially identical to the lag. PC1, which is 64% of image variance, loads +0.008: the dominant appearance axis is unrelated to fetal size. PC3 drops 0.084 -> 0.080 under BMI adjustment, less than the cross-sectional analysis suggested."
+  },
+  "kalman_result": {
+    "biometry_only": 0.4021662448474805,
+    "with_raw_PCs": 0.40104353599323656,
+    "with_bmi_resid_PCs": 0.401247995579412,
+    "narrowing_raw_pct": 0.279,
+    "narrowing_resid_pct": 0.228,
+    "lag_reference_pct": 0.03,
+    "reading": "PCs narrow the size-state posterior by 0.28% raw and 0.23% BMI-residualised, against the lag's 0.03%. That is a 9x improvement over the lag -- five channels each carrying a little beats one channel carrying the same -- but 0.28% is still negligible against a state that four biometry measurements already pin down."
+  },
+  "ANSWER": "Feeding PCs directly is BETTER than computing a lag -- about 9x more narrowing, and it avoids the lag's whole reliability problem since a per-visit PC mean over ~22 images is far better measured than a slot-level lag. But the improvement is 0.28% against 0.03%: both negligible. And the run establishes something more useful than either number -- 98.5% of fetuses have one image session, so no image representation whatsoever can be longitudinal in this cohort.",
+  "caveats": [
+    "PC loadings were estimated by correlating per-fetus PC means with the independent-placement size estimate, then fixed -- not jointly estimated with the state",
+    "channel noise set to 1-r^2 assuming standardised channels; a jointly-fitted Psi could differ",
+    "the 14 fetuses with 2 image-visits are too few to test whether PCs move within a pregnancy",
+    "PCA fitted on all 20,413 IMPACT images at once, so components are cohort-level, not per-visit"
+  ]
+}
