@@ -982,3 +982,64 @@ def fgm_radiomics(fids, n_pc=12, per_plane=False, use_labelled=True,
     d = dict(zip([int(x) for x in pf.index], S))
     arr = np.array([d.get(int(f), [np.nan] * S.shape[1]) for f in fids])
     return (arr - np.nanmean(arr, 0)) / np.nanstd(arr, 0), feat
+
+
+def fgm_split_sample_screen(Y, names, IMG, COV, n_top=2, seed=0, nperm=1000, folds=5, npc=8):
+    """Select variables on HALF A, test them on HALF B — breaks selection circularity.
+
+    When a variable is chosen because it topped a screen, re-testing it on the
+    same rows is circular and inflates the result. This ranks all candidates on
+    a random half and evaluates only the top n_top on the held-out half, with a
+    permutation null computed in B.
+
+    Y: (n, k) candidate targets. IMG: image representation. COV: nuisance design.
+    Returns dict with the A-ranking, the B-test of the A-selected variables, and
+    the same variables tested on the full cohort (flagged as confirmatory-only).
+    """
+    import numpy as np
+    from sklearn.decomposition import PCA
+    from sklearn.linear_model import RidgeCV
+    from sklearn.model_selection import KFold
+
+    def _oof(y, X, C, rows, sd=0):
+        m = rows & np.isfinite(y) & np.isfinite(X).all(1) & np.isfinite(C).all(1)
+        if m.sum() < 80:
+            return float("nan"), int(m.sum())
+        A = C[m]
+        yy = y[m] - A @ np.linalg.lstsq(A, y[m], rcond=None)[0]
+        Xs = X[m] - A @ np.linalg.lstsq(A, X[m], rcond=None)[0]
+        p = np.zeros_like(yy)
+        for tr, te in KFold(folds, shuffle=True, random_state=sd).split(Xs):
+            pc = PCA(min(npc, Xs.shape[1], len(tr) - 1), random_state=0).fit(Xs[tr])
+            p[te] = RidgeCV(alphas=np.logspace(-2, 3, 20)).fit(
+                pc.transform(Xs[tr]), yy[tr]).predict(pc.transform(Xs[te]))
+        return float(np.corrcoef(p, yy)[0, 1]), int(m.sum())
+
+    rng = np.random.default_rng(seed)
+    n = len(Y)
+    half = rng.random(n) < 0.5
+    A_rows, B_rows = half, ~half
+    rank = []
+    for j, nm in enumerate(names):
+        r, nn = _oof(Y[:, j], IMG, COV, A_rows)
+        rank.append((nm, j, r, nn))
+    rank.sort(key=lambda t: -(t[2] if np.isfinite(t[2]) else -9))
+    sel = rank[:n_top]
+    out = dict(ranking_A=[dict(var=a, r=float(c), n=int(d)) for a, b, c, d in rank],
+               selected=[a for a, b, c, d in sel], tested_B=[], full_cohort=[])
+    for nm, j, rA, _ in sel:
+        rB, nB = _oof(Y[:, j], IMG, COV, B_rows)
+        m = B_rows & np.isfinite(Y[:, j]) & np.isfinite(IMG).all(1) & np.isfinite(COV).all(1)
+        nl = []
+        for _ in range(nperm):
+            ys = Y[:, j].copy()
+            ys[m] = rng.permutation(Y[m, j])
+            nl.append(_oof(ys, IMG, COV, B_rows)[0])
+        nl = np.array([x for x in nl if np.isfinite(x)])
+        out["tested_B"].append(dict(var=nm, r_A=float(rA), r_B=float(rB), n_B=int(nB),
+                                    null_p95=float(np.percentile(nl, 95)),
+                                    p=float((1 + (nl >= rB).sum()) / (1 + len(nl)))))
+        rF, nF = _oof(Y[:, j], IMG, COV, np.ones(n, bool))
+        out["full_cohort"].append(dict(var=nm, r=float(rF), n=int(nF),
+                                       flag="NOT independent of selection"))
+    return out
