@@ -71,27 +71,43 @@ training. The loader reports how many ids collide so you can see it working.
 burn GPU hours:**
 
 ```bash
-python - <<'EOF'
-import sys, os; sys.path.insert(0,'.')
-from fgm_ssl.data import FrameManifest
-roots = {"impact": os.environ["IMPACT"], "clinical": os.environ["CLINICAL"]}
-ev = FrameManifest("data/image_clusters.csv", roots, ["impact"]).existing()
-pm = FrameManifest("data/image_clusters.csv", roots, ["impact","clinical"]).existing()
-print("eval pool  :", ev.counts())
-print("pretrain   :", pm.counts())
-print("ids shared across cohorts:", pm.id_collision(), "(namespaced, not merged)")
-assert len(ev.df) > 1000, "IMPACT PATH WRONG"
-assert len(pm.df) > len(ev.df), "CLINICAL PATH WRONG -- pretrain pool did not grow"
-print("OK -- ready to train")
-EOF
+python check_paths.py --image-root $IMPACT --image-root-clinical $CLINICAL
 ```
 
-Expect roughly 21,000 IMPACT frames / ~950 fetuses, and a pretrain pool near
-68,000 frames once clinical is included.
+It prints what resolved and exits non-zero if anything is wrong. Expect roughly
+21,000 IMPACT frames / ~950 fetuses, and a pretrain pool near 68,000 once
+clinical is included.
+
+`check_paths.py` (like every script here) puts its own directory on `sys.path`,
+so it works from any working directory — including inside a container. If you
+are not in `ssl_gpu/`, call it by full path and point at the inputs:
+
+```bash
+python /path/to/fgr-geometry/ssl_gpu/check_paths.py \
+  --image-root $IMPACT --image-root-clinical $CLINICAL \
+  --manifest /path/to/ssl_gpu/data/image_clusters.csv \
+  --panel    /path/to/ssl_gpu/data/panel.npz \
+  --frozen   /path/to/ssl_gpu/data/frozen_usfm.npz
+```
 
 If the clinical PNGs are not under `preprocessed/`, try `inpainted/` — both
 cohorts have that directory too, and it was byte-identical to `preprocessed/`
 for IMPACT.
+
+## 2b. Running inside a container (Apptainer)
+
+`cd` into the package first, or the `fgm_ssl` import will fail:
+
+```bash
+apptainer exec --nv \
+  --bind /mnt/beegfs/groups/collage/data:/mnt/beegfs/groups/collage/data \
+  YOUR_IMAGE.sif bash -lc '
+    cd /path/to/fgr-geometry/ssl_gpu && \
+    python check_paths.py --image-root $IMPACT --image-root-clinical $CLINICAL'
+```
+
+Bind-mount the data directory so the frames are visible inside the container,
+and export `IMPACT`/`CLINICAL` inside the shell (or pass them as flags).
 
 ## 3. Environment
 

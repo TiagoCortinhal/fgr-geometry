@@ -31,6 +31,7 @@ proxy will.
 ```
 ssl_gpu/                    <- in the repo
   RUN.md              terminal commands, start here
+  check_paths.py      verify frame paths before training
   PRESPEC.md          endpoints and stop rule, fixed before training
   run_ssl.py          training, one arm per invocation
   score_arms.py       evaluation (CPU, after training)
