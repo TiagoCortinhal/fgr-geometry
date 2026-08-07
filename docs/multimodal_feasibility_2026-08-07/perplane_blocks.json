@@ -1,0 +1,251 @@
+{
+  "question": "does the image null survive when frames are pooled PER PLANE instead of averaged across all planes?",
+  "motivation": "the default representation averages twice: USFM pools patches within a frame, then the pipeline means ~22 frames of DIFFERENT anatomical planes per fetus. Any plane-specific or localised signal is destroyed before the statistics start. Per-plane blocks also have genuine WITHIN-block structure, unlike a PCA of the pooled vector.",
+  "plane_labels": {
+    "labelled_IMPACT": {
+      "cerebral": {
+        "frames": 9602,
+        "fetuses": 913
+      },
+      "abdominal": {
+        "frames": 2055,
+        "fetuses": 819
+      },
+      "femur": {
+        "frames": 1215,
+        "fetuses": 794
+      }
+    },
+    "propagated": {
+      "cerebral": {
+        "frames": 12336,
+        "fetuses": 916
+      },
+      "abdominal": {
+        "frames": 6782,
+        "fetuses": 911
+      },
+      "femur": {
+        "frames": 1462,
+        "fetuses": 827
+      }
+    },
+    "choice": "used IMPACT ground-truth `plane` (12,929 frames); plane_prop failed a visual audit on the clinical set"
+  },
+  "results_16_tests": {
+    "pooled (12 PC)|growth": {
+      "n": 905,
+      "ladder": {
+        "raw": 0.21206135708784163,
+        "GA": 0.21914869581453145,
+        "GA+BMI": 0.1591728651213284
+      },
+      "p": 0.0033222591362126247,
+      "null_p95": 0.07326552763819609
+    },
+    "pooled (12 PC)|maternal": {
+      "n": 913,
+      "ladder": {
+        "raw": 0.5118444739045307,
+        "GA": 0.5111727321963278,
+        "GA+BMI": 0.002916603990864229
+      },
+      "p": 0.46179401993355484,
+      "null_p95": 0.07876613154947562
+    },
+    "pooled (12 PC)|Doppler": {
+      "n": 899,
+      "ladder": {
+        "raw": 0.42744268858762,
+        "GA": 0.06611609341419777,
+        "GA+BMI": 0.0771500043549113
+      },
+      "p": 0.08970099667774087,
+      "null_p95": 0.08552281192801743
+    },
+    "pooled (12 PC)|cardiac": {
+      "n": 660,
+      "ladder": {
+        "raw": 0.10489442152939439,
+        "GA": 0.10226770407559257,
+        "GA+BMI": 0.1114394423668299
+      },
+      "p": 0.03986710963455149,
+      "null_p95": 0.09804733221347753
+    },
+    "plane:cerebral|growth": {
+      "n": 900,
+      "ladder": {
+        "raw": 0.1465157556058906,
+        "GA": 0.1466961403735101,
+        "GA+BMI": 0.117346531245445
+      },
+      "p": 0.009966777408637873,
+      "null_p95": 0.07380254898397656
+    },
+    "plane:cerebral|maternal": {
+      "n": 908,
+      "ladder": {
+        "raw": 0.431653903631287,
+        "GA": 0.43177312343349306,
+        "GA+BMI": 0.016684889822554193
+      },
+      "p": 0.4152823920265781,
+      "null_p95": 0.07972139266439952
+    },
+    "plane:cerebral|Doppler": {
+      "n": 894,
+      "ladder": {
+        "raw": 0.1602319791698244,
+        "GA": 0.09470399089696303,
+        "GA+BMI": 0.10121652982004106
+      },
+      "p": 0.029900332225913623,
+      "null_p95": 0.08188593743318613
+    },
+    "plane:cerebral|cardiac": {
+      "n": 655,
+      "ladder": {
+        "raw": -0.026871277717289126,
+        "GA": -0.027406424989909795,
+        "GA+BMI": -0.006498325294381155
+      },
+      "p": 0.5348837209302325,
+      "null_p95": 0.10139123419985759
+    },
+    "plane:abdominal|growth": {
+      "n": 808,
+      "ladder": {
+        "raw": 0.13703053807555893,
+        "GA": 0.18910108399570508,
+        "GA+BMI": 0.15876384237388416
+      },
+      "p": 0.0033222591362126247,
+      "null_p95": 0.09164872161081224
+    },
+    "plane:abdominal|maternal": {
+      "n": 815,
+      "ladder": {
+        "raw": 0.3372962828483858,
+        "GA": 0.3345543999822659,
+        "GA+BMI": 0.059855641639069
+      },
+      "p": 0.12292358803986711,
+      "null_p95": 0.08354064234690062
+    },
+    "plane:abdominal|Doppler": {
+      "n": 802,
+      "ladder": {
+        "raw": 0.23188575962569566,
+        "GA": 0.07533590173898529,
+        "GA+BMI": 0.06533225096553227
+      },
+      "p": 0.11295681063122924,
+      "null_p95": 0.08137146132050965
+    },
+    "plane:abdominal|cardiac": {
+      "n": 603,
+      "ladder": {
+        "raw": 0.09590758175401576,
+        "GA": 0.07666823877633397,
+        "GA+BMI": 0.0930953488582254
+      },
+      "p": 0.07308970099667775,
+      "null_p95": 0.09814916175791118
+    },
+    "plane:femur|growth": {
+      "n": 784,
+      "ladder": {
+        "raw": 0.18420119521751724,
+        "GA": 0.1565371169554261,
+        "GA+BMI": 0.16701303222328714
+      },
+      "p": 0.0033222591362126247,
+      "null_p95": 0.08874767356890943
+    },
+    "plane:femur|maternal": {
+      "n": 790,
+      "ladder": {
+        "raw": 0.22621794840453716,
+        "GA": 0.22214801771213127,
+        "GA+BMI": 0.04140748003491688
+      },
+      "p": 0.18272425249169436,
+      "null_p95": 0.07367134354788211
+    },
+    "plane:femur|Doppler": {
+      "n": 778,
+      "ladder": {
+        "raw": 0.2109635287148591,
+        "GA": 0.07850907665557863,
+        "GA+BMI": 0.07457240078727038
+      },
+      "p": 0.07641196013289037,
+      "null_p95": 0.08012803213739848
+    },
+    "plane:femur|cardiac": {
+      "n": 582,
+      "ladder": {
+        "raw": 0.12077257401859853,
+        "GA": 0.11563482779565595,
+        "GA+BMI": 0.1219871693672823
+      },
+      "p": 0.04983388704318937,
+      "null_p95": 0.11960392270498983
+    }
+  },
+  "bh_survivors": {
+    "growth_all_four_blocks": "pooled +0.159 q=0.018, abdominal +0.159 q=0.018, femur +0.167 q=0.018, cerebral +0.117 q=0.040",
+    "cerebral_Doppler": "+0.101, p=0.030, q=0.096 \u2014 the ONLY non-growth survivor",
+    "note": "growth is measurement recovery (biometry is measured from these images), so the only novel candidate was cerebral->Doppler"
+  },
+  "CEREBRAL_DOPPLER_DOES_NOT_LOCALISE": {
+    "design": "if cerebral images genuinely track cerebral haemodynamics, the signal must sit on MCA (Percentil_ACM) and CPR \u2014 the cerebral Doppler measurements \u2014 not on the placental ones",
+    "per_variable": {
+      "Percentil_ACM": 0.013009926286021167,
+      "Percentil_CPR": 0.022361007424861745,
+      "Percentil_AU": -0.1072475563801167,
+      "Percentil_UTA": 0.03515981700909631,
+      "Percentil_DV": -0.055992328828406115
+    },
+    "perm_tests": {
+      "Percentil_ACM": {
+        "obs": 0.013009926286021167,
+        "p": 0.12219451371571072
+      },
+      "Percentil_CPR": {
+        "obs": 0.022361007424861745,
+        "p": 0.09975062344139651
+      }
+    },
+    "control_blocks": {
+      "abdominal": {
+        "Percentil_ACM": -0.008148180810346699,
+        "Percentil_CPR": 0.05479282101426226,
+        "Percentil_AU": -0.034331732782751416,
+        "Percentil_UTA": 0.01118538338094145,
+        "Percentil_DV": 0.0011500644206740476
+      },
+      "femur": {
+        "Percentil_ACM": -3.33064782417532e-05,
+        "Percentil_CPR": -0.11909879973704034,
+        "Percentil_AU": -0.04679235577997038,
+        "Percentil_UTA": -0.03332100156952938,
+        "Percentil_DV": -0.029260533305315795
+      }
+    },
+    "VERDICT": "THE MECHANISM FAILS. Cerebral images track ACM at r=+0.013 (p=0.12) and CPR at r=+0.022 (p=0.10) \u2014 both essentially zero and neither clearing its null. The largest per-variable value is a NEGATIVE -0.107 against the umbilical artery, a PLACENTAL vessel that cerebral images do not depict. The block-level +0.101 is therefore not cerebral haemodynamics; it is a diffuse multivariate association with no anatomical localisation, which is what a residual confound looks like rather than a finding."
+  },
+  "WHAT_PER_PLANE_DID_CHANGE": {
+    "maternal_confound_confirmed_in_every_plane": "cerebral 0.43->0.02, abdominal 0.34->0.06, femur 0.23->0.04 on BMI adjustment",
+    "cardiac_is_plane_dependent": "cerebral -0.006 vs femur +0.122 \u2014 but neither survives BH (q=0.114, 0.535)",
+    "growth_unchanged": "+0.117 to +0.167 across planes vs +0.159 pooled; measurement recovery is plane-general as expected"
+  },
+  "CONCLUSION": "Per-plane pooling was the strongest remaining objection to today's image nulls, and it does NOT overturn them. It surfaces exactly one new candidate \u2014 cerebral->Doppler at q=0.096 \u2014 which dissolves on localisation: the signal is absent from the cerebral Doppler variables themselves and largest against a placental vessel. The image null now holds under a representation that preserves plane identity.",
+  "caveats": [
+    "4 PCs per plane vs 12 for pooled \u2014 per-plane blocks have less capacity; a like-for-like dimension match was not run",
+    "femur has only 1,215 labelled frames across 794 fetuses (~1.5 frames per fetus), so that block is close to single-frame and noisier than the others",
+    "still mean-pooled WITHIN plane; patch tokens remain untested and would need re-extraction",
+    "radiomics (raw-pixel texture, already extracted for all 21,192 IMPACT frames) is the remaining encoder-independent check and was not run here"
+  ]
+}
