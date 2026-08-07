@@ -1,42 +1,42 @@
 # Terminal commands — you are already on the GPU node
 
-## 0. What to upload
+## 0. Get the code — it is in the repo
 
-**Upload only this (19 KB):** `ssl_gpu_package.tar.gz` — the code.
+```bash
+git clone https://github.com/TiagoCortinhal/fgr-geometry.git
+cd fgr-geometry/ssl_gpu
+mkdir -p data results logs
+```
 
-**Also upload these two small files** (built locally, they are NOT in the tarball
-because they contain cohort data):
+(Already cloned? `git pull` — the package is under `ssl_gpu/`.)
+
+## 1. The two data files
+
+These are NOT in the repo — `.gitignore` excludes `data/` and `*.npz`, which is
+correct: they are cohort data. Copy them across once:
 
 | file | size | what it is |
 |---|---|---|
 | `panel.npz` | 156 KB | the 977×25 tabular panel + fids + GA + BMI |
 | `frozen_usfm.npz` | 3.0 MB | per-fetus frozen USFM embedding — **the incumbent to beat** |
 
-**Do NOT upload the frames** — they are already on the HPC. You only need to
-point `--image-root` at them.
-
 ```bash
-# on your laptop
-scp ssl_gpu_package.tar.gz panel.npz frozen_usfm.npz USER@HOST:~/fgm/
+# from your laptop
+scp panel.npz frozen_usfm.npz USER@HOST:~/fgr-geometry/ssl_gpu/data/
 ```
 
-## 1. Unpack and place the inputs
-
-```bash
-cd ~/fgm
-tar -xzf ssl_gpu_package.tar.gz
-cd ssl_gpu
-mkdir -p data results logs
-mv ~/fgm/panel.npz ~/fgm/frozen_usfm.npz data/
-```
+Both are regenerable on any machine with the cohort mounted:
+`python build_inputs.py --out data`.
 
 You also need the **image manifest** (`image_clusters.csv`, ~9 MB, the
-new_filename → fetus_id map). If it is not already on the HPC, upload it too:
+new_filename → fetus_id map) in `data/`. If it is already on the HPC, symlink it
+rather than copying:
 
 ```bash
-# only if not already there
-scp image_clusters.csv USER@HOST:~/fgm/ssl_gpu/data/
+ln -s /path/on/hpc/to/image_clusters.csv data/image_clusters.csv
 ```
+
+**The frames stay where they are** — you only point `--image-root` at them.
 
 ## 2. Point at the frames and CHECK before training
 
@@ -112,11 +112,17 @@ python score_arms.py --panel data/panel.npz --results results \
 
 ## 6. What to send back
 
+`results/scores.json` and `logs/` are what matter — a few hundred KB. Either
+scp them back, or commit the small ones (`results/` is gitignored, so use `-f`
+deliberately and only for scores.json + logs):
+
 ```bash
-tar -czf fgm_ssl_results.tar.gz results/ logs/
+scp -r USER@HOST:~/fgr-geometry/ssl_gpu/results/scores.json .
+scp -r USER@HOST:~/fgr-geometry/ssl_gpu/logs .
 ```
 
-That is a few MB: `scores.json`, the per-arm logs, and the embeddings.
+The `*_embeddings.npz` files are a few MB each; keep them on the HPC unless we
+need to re-score.
 
 ## Reading the result
 

@@ -26,36 +26,27 @@ cohort. This package removes that objection.
 If `supervised`, trained directly on the target, finds nothing, no unsupervised
 proxy will.
 
-## Files to ship
+## Layout
 
 ```
-ssl_gpu/
-  PRESPEC.md          read first
+ssl_gpu/                    <- in the repo
+  RUN.md              terminal commands, start here
+  PRESPEC.md          endpoints and stop rule, fixed before training
   run_ssl.py          training, one arm per invocation
   score_arms.py       evaluation (CPU, after training)
-  build_inputs.py     run LOCALLY to make the two npz inputs
-  submit.sbatch       SLURM template
+  build_inputs.py     regenerates the two npz inputs from the cohort
+  smoke_test.py       synthetic end-to-end check
   fgm_ssl/            data.py models.py evaluate.py
-  data/
-    panel.npz         from build_inputs.py  (~200 KB)
-    frozen_usfm.npz   from build_inputs.py  (~3 MB)
-    frames/           the PNGs, flat: <new_filename> as in the manifest
-    image_clusters.csv
+  data/               NOT in the repo (gitignored -- cohort data)
+    panel.npz           from build_inputs.py  (156 KB)
+    frozen_usfm.npz     from build_inputs.py  (3 MB)
+    image_clusters.csv  the manifest
 ```
 
-## Run
+Frames are referenced by `--image-root`, never copied.
 
-```bash
-python build_inputs.py --out data          # locally, before shipping
-
-python run_ssl.py --arm mae        --epochs 100 --batch 64 --amp
-python run_ssl.py --arm contrast   --epochs 100 --batch 64 --amp
-python run_ssl.py --arm supervised --epochs  60 --batch 64 --amp --target cardiac
-python score_arms.py --panel data/panel.npz --results results \
-                     --frozen data/frozen_usfm.npz
-```
-
-Expect ~2–4 h/arm for 100 epochs on 21k frames at 224² on one A100.
+Expect ~2–4 h/arm for 100 epochs on 21k frames at 224² on one A100; the
+supervised arm is ~5x that because it trains one model per fold.
 
 ## The three things that would invalidate the result
 
