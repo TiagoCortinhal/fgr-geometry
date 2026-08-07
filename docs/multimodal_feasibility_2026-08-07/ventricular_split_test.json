@@ -1,0 +1,197 @@
+{
+  "prespecification": "prespec_ventricular.md \u2014 split-sample design, directions and stop rule fixed before computing",
+  "selection_problem": "LV_basal and RV_basal were chosen BECAUSE they topped an 11-variable screen on this cohort. Re-testing on the same rows is circular. Primary design: rank all 11 on a random half A, test only the A-selected top-2 on held-out half B, with the permutation null computed in B.",
+  "USFM": {
+    "ranking_A": [
+      {
+        "var": "Percentil_LV_basal",
+        "r": 0.14024961866062713,
+        "n": 372
+      },
+      {
+        "var": "Percentil_IRTms",
+        "r": 0.10677796891240879,
+        "n": 404
+      },
+      {
+        "var": "Percentil_Sapse",
+        "r": 0.09522704188621184,
+        "n": 201
+      },
+      {
+        "var": "Percentil_MPI",
+        "r": 0.07549502699452251,
+        "n": 404
+      },
+      {
+        "var": "Percentil_RV_basal",
+        "r": 0.027073250015211055,
+        "n": 372
+      }
+    ],
+    "tested_B": [
+      {
+        "var": "Percentil_LV_basal",
+        "r_A": 0.14024961866062713,
+        "r_B": 0.12366734509378047,
+        "n_B": 383,
+        "null_p95": 0.0670347237149436,
+        "p": 0.011988011988011988
+      },
+      {
+        "var": "Percentil_IRTms",
+        "r_A": 0.10677796891240879,
+        "r_B": 0.08576372534951691,
+        "n_B": 424,
+        "null_p95": 0.06394904790424479,
+        "p": 0.023976023976023976
+      }
+    ],
+    "full_cohort": [
+      {
+        "var": "Percentil_LV_basal",
+        "r": 0.1645073123324192,
+        "n": 755,
+        "flag": "NOT independent of selection"
+      },
+      {
+        "var": "Percentil_IRTms",
+        "r": 0.12044258232667286,
+        "n": 828,
+        "flag": "NOT independent of selection"
+      }
+    ],
+    "PASSES_THE_STOP_RULE": true,
+    "reading": "Percentil_LV_basal is selected in half A (r=+0.140) and SURVIVES in held-out half B (r=+0.124, n=383, null p95=0.067, p=0.012, BH q=0.048). Percentil_IRTms also transfers (+0.107 -> +0.086, p=0.024, q=0.048). This is the first result in this project to pass a split-sample selection test."
+  },
+  "radiomics": {
+    "ranking_A": [
+      {
+        "var": "Percentil_ICTms",
+        "r": -0.0015037525521295141,
+        "n": 404
+      },
+      {
+        "var": "Percentil_ETms",
+        "r": -0.006800207705820029,
+        "n": 404
+      },
+      {
+        "var": "Percentil_MPI",
+        "r": -0.011736134577318473,
+        "n": 404
+      },
+      {
+        "var": "Percentil_IRTms",
+        "r": -0.0139182908732629,
+        "n": 404
+      },
+      {
+        "var": "Percentil_LV_basal",
+        "r": -0.05606606725998732,
+        "n": 372
+      }
+    ],
+    "tested_B": [
+      {
+        "var": "Percentil_ICTms",
+        "r_A": -0.0015037525521295141,
+        "r_B": -0.04502664655475345,
+        "n_B": 423,
+        "null_p95": 0.04978561786423479,
+        "p": 0.4225774225774226
+      },
+      {
+        "var": "Percentil_ETms",
+        "r_A": -0.006800207705820029,
+        "r_B": 0.020077341699680475,
+        "n_B": 423,
+        "null_p95": 0.04930890485512961,
+        "p": 0.11488511488511488
+      }
+    ],
+    "PASSES_THE_STOP_RULE": false,
+    "reading": "EVERY radiomics r_A is negative or near zero (best -0.002). There was nothing to select in half A, so its top-2 (ICTms, ETms) are arbitrary and neither transfers. The radiomics cardiac block-level 0.169 does not survive being split."
+  },
+  "H2_specificity": {
+    "values": {
+      "Percentil_LV_basal": {
+        "radiomics": 0.12866224911423124,
+        "usfm": 0.1645073123324192,
+        "n": 755
+      },
+      "Percentil_RV_basal": {
+        "radiomics": 0.12763578096185804,
+        "usfm": 0.07047797662501677,
+        "n": 755
+      },
+      "Percentil_LV_longitudinal": {
+        "radiomics": 0.017478217388596878,
+        "usfm": -0.025524725954563256,
+        "n": 755
+      },
+      "Percentil_RV_longitudinal": {
+        "radiomics": 0.06757579319224291,
+        "usfm": 0.01356382751573883,
+        "n": 757
+      }
+    },
+    "PASSES": true,
+    "reading": "the prespecified specificity check holds on BOTH representations: basal percentiles are much stronger than longitudinal ones from the SAME chambers. USFM basal LV +0.165 / RV +0.070 vs longitudinal LV -0.026 / RV +0.014; radiomics basal +0.129 / +0.128 vs longitudinal +0.017 / +0.068. A global confound would lift both axes equally, so this argues against one."
+  },
+  "VERDICT": "SPLIT. The USFM arm passes its prespecified stop rule -- LV_basal is selected on one half and clears its permutation null on the other, at BH q=0.048 -- and the specificity check passes on both representations. But the radiomics arm has no A-half signal to select at all, so the two encoders DISAGREE at split-sample resolution despite agreeing at 0.963 on the raw representation. That disagreement is the reason not to call this a finding yet.",
+  "what_would_settle_it": "the split is seed-dependent at n~380 per half. Repeat over 20 random splits and report the distribution of r_B: a real effect should transfer in most splits, a lucky maximum in few. That is the cheapest decisive test and it has NOT been run.",
+  "caveats": [
+    "one split, one seed \u2014 the single most important limitation",
+    "LV_basal has n=755 (coverage 0.807), so each half is ~380",
+    "radiomics and USFM agree at cc=0.963 on the raw representation yet disagree here, which suggests the effect lives in a small subspace one encoder retains and the other does not",
+    "IRTms transferring alongside LV_basal was not predicted by H1 and is unexplained"
+  ],
+  "TWENTY_SPLIT_REPLICATION": {
+    "design": "repeat the whole select-on-A / test-on-B procedure over 20 random seeds; a real effect transfers in most splits",
+    "USFM": {
+      "lv_basal_selected_in": "15/20",
+      "r_B_mean": 0.10912019902639705,
+      "r_B_range": [
+        -0.003704410135382298,
+        0.1809424607083666
+      ],
+      "p_below_05": "13/15",
+      "selection_counts": {
+        "Percentil_LV_basal": 15,
+        "Percentil_IRTms": 8,
+        "Percentil_Tapse": 1,
+        "Percentil_MPI": 10,
+        "Percentil_RV_longitudinal": 1,
+        "Percentil_ETms": 1,
+        "Percentil_RV_basal": 1,
+        "Percentil_ICTms": 3
+      },
+      "sig_B_tests": "18/40"
+    },
+    "radiomics": {
+      "lv_basal_selected_in": "12/20",
+      "r_B_mean": 0.04636478970087184,
+      "r_B_range": [
+        -0.08180975906700003,
+        0.1641571727884996
+      ],
+      "p_below_05": "5/12",
+      "selection_counts": {
+        "Percentil_ICTms": 3,
+        "Percentil_ETms": 1,
+        "Percentil_RV_basal": 6,
+        "Percentil_LV_basal": 12,
+        "Percentil_IRTms": 8,
+        "Percentil_Mapse": 2,
+        "Percentil_RV_longitudinal": 3,
+        "Percentil_MPI": 2,
+        "Percentil_LV_longitudinal": 1,
+        "Percentil_Sapse": 2
+      },
+      "sig_B_tests": "12/40"
+    },
+    "READING": "LV_basal is the most-selected variable on BOTH representations (USFM 15/20, radiomics 12/20) out of 11 candidates -- chance selection into a top-2 would be ~3.6/20. On USFM it then transfers: mean held-out r_B = +0.109, significant in 13 of the 15 splits where it was selected. On radiomics it transfers much more weakly: mean r_B = +0.046, significant in only 5 of 12, and the range crosses zero (-0.082 to +0.164). The single-seed result was therefore not a lucky split -- but the encoder disagreement is systematic, not seed noise.",
+    "VERDICT_AFTER_REPLICATION": "LV_basal is a REAL but SMALL and ENCODER-DEPENDENT association. It is consistently the strongest of 11 cardiac variables on both representations and consistently transfers out-of-sample on USFM (r~0.11, 13/15 splits). It does not reliably transfer on radiomics (r~0.05, 5/12). Combined with the specificity check passing on both -- basal >> longitudinal from the same chambers -- this is the one image<->tabular signal in this project that has survived every control applied to it. Its effect size is r~0.11, which is small, and it rests on a single encoder."
+  }
+}
