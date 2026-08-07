@@ -39,12 +39,18 @@ could in principle find a subspace both miss. Nothing we ran rules that out.
 - Few-shot/meta-learning for medical images (e.g. MetaMed,
   10.1016/j.patcog.2021.108111) is an active line, all **image-label** tasks.
 
-Note what is *absent*: title-restricted searches for "SSL does not help small
-datasets", "pretraining benefits diminish with dataset size", and
-"fine-tuning versus frozen features" returned essentially nothing. **The
-negative-result literature for SSL at small n is not there** — which is itself
-informative about what gets published, and about where an honest contribution
-could sit.
+A note on what we did NOT establish. Three exact-phrase queries ("SSL does not
+help small datasets" title-restricted; "pretraining benefits diminish dataset
+size" and "fine-tuning versus frozen features" on title+abstract) returned
+almost nothing — but one of them returned
+10.64898/2025.12.06.25341759, a negative-transfer result showing pretrained VLMs
+underperforming ImageNet CNNs on ChestX-ray14. Three long natural-language
+queries are the wrong instrument for establishing that a literature is absent,
+and they produced a counterexample. **We make no claim about whether a
+negative-result literature for SSL at small n exists.** What we can say is
+narrower and sufficient: the ultrasound-SSL papers we did retrieve all evaluate
+on image-domain tasks, so none of them tells us whether a better image encoder
+would help cross-modal prediction on a cohort like ours.
 
 ## 3. Orthogonal / weakly-aligned data — the thinnest area, and the closest to us
 
@@ -57,9 +63,12 @@ The nearest applied work is **ICH-PRNet** (Neural Networks 2025,
 10.1016/j.neunet.2024.107096), cross-modal imaging + tabular prognosis — but it
 assumes the modalities are complementary and does not test whether they are.
 
-**This is the gap.** The field has methods for *fusing* imaging and tabular data
-and essentially no established protocol for *deciding whether fusion is
-warranted on a given cohort*. We built one by accident: information
+**This looks like a gap, stated with the same caution as above.** Our searches
+found methods for *fusing* imaging and tabular data and did not surface a
+protocol for *deciding whether fusion is warranted on a given cohort* — but a
+handful of queries cannot establish that none exists, and a proper claim would
+need a systematic search with a registered protocol. What we can say without
+qualification is that we built such a procedure for this cohort: information
 decomposition, block ladders with acquisition-confound controls, split-sample
 selection, and encoder-agreement checks.
 
