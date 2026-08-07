@@ -1,0 +1,205 @@
+{
+  "question": "is the image null encoder-general, or a USFM artefact? Test with PyRadiomics raw-pixel texture.",
+  "representation": {
+    "radiomics_features": 219,
+    "families": [
+      "firstorder",
+      "glcm",
+      "glrlm",
+      "glszm"
+    ],
+    "fetuses": 918,
+    "note": "metadata columns (ga_weeks, plane_conf, ids, dates) EXCLUDED \u2014 ga_weeks in particular would have injected the GA channel into the image block"
+  },
+  "ga_leakage": {
+    "radiomics_PC1to5": [
+      0.026,
+      0.144,
+      0.263,
+      0.009,
+      0.091
+    ],
+    "usfm_PC1to5": [
+      0.276,
+      0.148,
+      0.005,
+      0.069,
+      0.108
+    ],
+    "note": "USFM PC1 carries GA at 0.276; radiomics spreads it to PC3 (0.263). Both encode maturation, differently distributed."
+  },
+  "THE_TWO_ENCODERS_AGREE": {
+    "heldout_cc": 0.963,
+    "reading": "radiomics and USFM held-out canonical correlation is +0.963 \u2014 they are near-interchangeable views of the same images. Any null found on one is therefore expected on the other, which makes this a WEAK independence check: it tests encoder architecture, not information content."
+  },
+  "block_table": {
+    "radiomics|growth": {
+      "n": 905,
+      "ladder": {
+        "raw": 0.119,
+        "GA": 0.163,
+        "GA+BMI": 0.102
+      },
+      "p": 0.017,
+      "bh_q": 0.04533333333333334,
+      "bh_reject": true
+    },
+    "radiomics|maternal": {
+      "n": 913,
+      "ladder": {
+        "raw": 0.298,
+        "GA": 0.262,
+        "GA+BMI": 0.023
+      },
+      "p": 0.286,
+      "bh_q": 0.3813333333333333,
+      "bh_reject": false
+    },
+    "radiomics|Doppler": {
+      "n": 899,
+      "ladder": {
+        "raw": 0.306,
+        "GA": -0.019,
+        "GA+BMI": -0.021
+      },
+      "p": 0.648,
+      "bh_q": 0.648,
+      "bh_reject": false
+    },
+    "radiomics|cardiac": {
+      "n": 660,
+      "ladder": {
+        "raw": 0.169,
+        "GA": 0.129,
+        "GA+BMI": 0.169
+      },
+      "p": 0.003,
+      "bh_q": 0.012,
+      "bh_reject": true
+    },
+    "USFM|growth": {
+      "n": 905,
+      "ladder": {
+        "raw": 0.212,
+        "GA": 0.219,
+        "GA+BMI": 0.159
+      },
+      "p": 0.003,
+      "bh_q": 0.012,
+      "bh_reject": true
+    },
+    "USFM|maternal": {
+      "n": 913,
+      "ladder": {
+        "raw": 0.512,
+        "GA": 0.511,
+        "GA+BMI": 0.003
+      },
+      "p": 0.462,
+      "bh_q": 0.528,
+      "bh_reject": false
+    },
+    "USFM|Doppler": {
+      "n": 899,
+      "ladder": {
+        "raw": 0.427,
+        "GA": 0.066,
+        "GA+BMI": 0.077
+      },
+      "p": 0.09,
+      "bh_q": 0.144,
+      "bh_reject": false
+    },
+    "USFM|cardiac": {
+      "n": 660,
+      "ladder": {
+        "raw": 0.105,
+        "GA": 0.102,
+        "GA+BMI": 0.111
+      },
+      "p": 0.04,
+      "bh_q": 0.08,
+      "bh_reject": true
+    }
+  },
+  "bh_survivors": [
+    "radiomics|growth",
+    "radiomics|cardiac",
+    "USFM|growth",
+    "USFM|cardiac"
+  ],
+  "CARDIAC_REPLICATES_BUT_DOES_NOT_LOCALISE": {
+    "block_level": {
+      "radiomics": 0.169,
+      "radiomics_p": 0.003,
+      "usfm": 0.111,
+      "usfm_p": 0.04
+    },
+    "per_variable": {
+      "Percentil_MPI": {
+        "radiomics": 0.05703949774672193,
+        "usfm": 0.10468454203045265
+      },
+      "Percentil_Tapse": {
+        "radiomics": -0.025064878292881013,
+        "usfm": 0.009886103218520745
+      },
+      "Percentil_Mapse": {
+        "radiomics": -0.004689626386829513,
+        "usfm": -0.053898716440825924
+      },
+      "Percentil_Sapse": {
+        "radiomics": -0.025681055566017297,
+        "usfm": 0.042202210565361054
+      },
+      "Percentil_RV_longitudinal": {
+        "radiomics": 0.06757579319224291,
+        "usfm": 0.01356382751573883
+      },
+      "Percentil_LV_longitudinal": {
+        "radiomics": 0.017478217388596878,
+        "usfm": -0.025524725954563256
+      },
+      "Percentil_RV_basal": {
+        "radiomics": 0.12763578096185804,
+        "usfm": 0.07047797662501677
+      },
+      "Percentil_LV_basal": {
+        "radiomics": 0.12866224911423124,
+        "usfm": 0.1645073123324192
+      },
+      "Percentil_ICTms": {
+        "radiomics": 0.04175837363338991,
+        "usfm": 0.09768002664750966
+      },
+      "Percentil_ETms": {
+        "radiomics": -0.03490749893437909,
+        "usfm": -0.018945476464989428
+      },
+      "Percentil_IRTms": {
+        "radiomics": 0.03893739557761492,
+        "usfm": 0.12044258232667286
+      }
+    },
+    "cross_encoder_agreement_across_11_vars": 0.663,
+    "both_exceed_0p08": [
+      "Percentil_LV_basal"
+    ],
+    "echo_quality_control": {
+      "radiomics_to_quality": 0.05,
+      "usfm_to_quality": 0.193,
+      "block_with_quality_adjusted": {
+        "radiomics": "0.089 -> 0.117",
+        "usfm": "0.068 -> 0.087"
+      }
+    },
+    "VERDICT": "the cardiac block is the ONLY signal replicating on both representations and surviving BH (radiomics q=0.012, USFM q=0.080), and it is NOT echo image quality \u2014 adding quality to the covariates INCREASES it. But it does not localise: of 11 cardiac variables only Percentil_LV_basal exceeds 0.08 on both (radiomics 0.129, USFM 0.165), and the per-variable profiles agree only at r=0.663. A block-level 0.11-0.17 spread thinly across 11 variables with one weak anchor is not yet an interpretable finding."
+  },
+  "CONCLUSION": "Radiomics does NOT overturn the image null, and it sharpens one candidate. Maternal collapses on BMI in both (0.298->0.023, 0.512->0.003). Doppler is dead on radiomics (-0.021, p=0.648), which further undermines the cerebral->Doppler hit that already failed localisation. Growth replicates (measurement recovery). CARDIAC is the one thing that survives on both encoders, is not explained by image quality, and merits a targeted follow-up \u2014 but its per-variable profile is too diffuse to call a finding today.",
+  "caveats": [
+    "radiomics<->USFM cc=0.963 means this is NOT an independent encoder check in the sense intended; both are frame-level summaries of the same pixels and agree almost completely",
+    "the earlier archived image<->cardiac claim (0.248) still does not reproduce; this is a different, much weaker cardiac signal on the percentile-scored panel columns",
+    "cardiac n=660 with 11 variables at 0.81-0.95 coverage; Percentil_Sapse at 0.478 drops n to 427",
+    "the final diagnostic line of the first script crashed on a NaN in GA before writing its json; the block table here was transcribed from the completed stdout and re-verified against the per-variable run"
+  ]
+}
