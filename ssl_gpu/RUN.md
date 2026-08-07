@@ -38,35 +38,60 @@ ln -s /path/on/hpc/to/image_clusters.csv data/image_clusters.csv
 
 **The frames stay where they are** — you only point `--image-root` at them.
 
-## 2. Point at the frames and CHECK before training
+## 2. The two frame paths
 
-Set `FRAMES` to wherever the PNGs live on the HPC:
+Both cohorts have the same layout; `preprocessed/` holds the PNGs.
 
 ```bash
-export FRAMES=/path/on/hpc/to/preprocessed     # <-- tell me the path and I'll fix this line
+export IMPACT=/mnt/beegfs/groups/collage/data/IMPACT_FULL/processed/IMPACT_FULL/preprocessed
+export CLINICAL=/mnt/beegfs/groups/collage/data/IMPACT_CLINICAL/processed/IMPACT_CLINICAL/preprocessed
 ```
 
-Frames may be flat or nested; if nested, `--image-root` must be the directory
-such that `<image-root>/<new_filename>` resolves.
+**Why both, and what each is for:**
 
-**Run this first — it costs 30 seconds and catches a wrong path before you burn
-GPU hours:**
+| cohort | role | why |
+|---|---|---|
+| **IMPACT** (~21k frames, ~950 fetuses) | **evaluation** — and pretraining | the only cohort with tabular targets, so every endpoint is scored here |
+| **clinical** (~47k frames) | **pretraining only** | no tabular targets exist for it, but it roughly triples the frames available for representation learning |
+
+The clinical set is what makes the SSL arms worth running at all: the objection
+to our frozen-feature nulls is that USFM was never tuned on this data, and
+68k frames is a far better answer to that than 21k.
+
+The supervised arm ignores `--image-root-clinical` automatically — it needs
+targets, which clinical does not have. It says so in its log.
+
+**One subtlety the code handles for you:** the two cohorts number fetuses
+independently, so IMPACT fetus 293 and clinical fetus 293 are different
+pregnancies. Frames are keyed `<cohort>:<id>` during pretraining; merging them
+would treat two unrelated pregnancies as one fetus and corrupt contrastive
+training. The loader reports how many ids collide so you can see it working.
+
+**Run this before training — 30 seconds, and it catches a wrong path before you
+burn GPU hours:**
 
 ```bash
 python - <<'EOF'
-import sys; sys.path.insert(0,'.')
+import sys, os; sys.path.insert(0,'.')
 from fgm_ssl.data import FrameManifest
-import os
-m = FrameManifest("data/image_clusters.csv", os.environ["FRAMES"], "impact")
-n_rows = len(m.df); m.existing()
-print(f"manifest rows: {n_rows} | files found on disk: {len(m.df)}")
-print(f"fetuses with frames: {m.df.fid.nunique()}")
-assert len(m.df) > 1000, "PATH IS WRONG -- fix $FRAMES before training"
+roots = {"impact": os.environ["IMPACT"], "clinical": os.environ["CLINICAL"]}
+ev = FrameManifest("data/image_clusters.csv", roots, ["impact"]).existing()
+pm = FrameManifest("data/image_clusters.csv", roots, ["impact","clinical"]).existing()
+print("eval pool  :", ev.counts())
+print("pretrain   :", pm.counts())
+print("ids shared across cohorts:", pm.id_collision(), "(namespaced, not merged)")
+assert len(ev.df) > 1000, "IMPACT PATH WRONG"
+assert len(pm.df) > len(ev.df), "CLINICAL PATH WRONG -- pretrain pool did not grow"
 print("OK -- ready to train")
 EOF
 ```
 
-Expect roughly 21,000 frames / ~950 fetuses for IMPACT.
+Expect roughly 21,000 IMPACT frames / ~950 fetuses, and a pretrain pool near
+68,000 frames once clinical is included.
+
+If the clinical PNGs are not under `preprocessed/`, try `inpainted/` — both
+cohorts have that directory too, and it was byte-identical to `preprocessed/`
+for IMPACT.
 
 ## 3. Environment
 
@@ -79,29 +104,41 @@ python -c "import torch;print('torch',torch.__version__,'cuda',torch.cuda.is_ava
 ## 4. Train — three commands, run them one at a time
 
 ```bash
-# arm 1: masked autoencoder            ~2-4 h
+# arm 1: masked autoencoder -- pretrains on BOTH cohorts    ~4-8 h
 python run_ssl.py --arm mae --epochs 100 --batch 64 --amp --workers 8 \
-  --manifest data/image_clusters.csv --image-root $FRAMES \
+  --manifest data/image_clusters.csv \
+  --image-root $IMPACT --image-root-clinical $CLINICAL \
   --panel data/panel.npz --out results 2>&1 | tee logs/mae.log
 
-# arm 2: contrastive (same-fetus)      ~2-4 h
+# arm 2: contrastive, same-fetus positives -- BOTH cohorts  ~4-8 h
 python run_ssl.py --arm contrast --epochs 100 --batch 64 --amp --workers 8 \
-  --manifest data/image_clusters.csv --image-root $FRAMES \
+  --manifest data/image_clusters.csv \
+  --image-root $IMPACT --image-root-clinical $CLINICAL \
   --panel data/panel.npz --out results 2>&1 | tee logs/contrast.log
 
-# arm 3: supervised, THE DECISIVE ONE  ~5x longer: it trains 5 models
-#        (out-of-fold, so every fetus is scored by a model that never saw it)
+# arm 3: supervised, THE DECISIVE ONE -- IMPACT only (needs targets)
+#        trains 5 models out-of-fold, so ~5x one arm's time
 python run_ssl.py --arm supervised --epochs 60 --batch 64 --amp --workers 8 \
-  --target cardiac --manifest data/image_clusters.csv --image-root $FRAMES \
+  --target cardiac --manifest data/image_clusters.csv --image-root $IMPACT \
   --panel data/panel.npz --out results 2>&1 | tee logs/supervised.log
 ```
 
-Run them in the background and detach if your session may drop:
+Arms 1-2 take longer than the earlier estimate because the pretrain pool is
+~68k frames rather than 21k. Run them in the background if your session may
+drop:
 
 ```bash
-nohup python run_ssl.py --arm mae ... > logs/mae.log 2>&1 &
+nohup python run_ssl.py --arm mae --epochs 100 --batch 64 --amp --workers 8 \
+  --manifest data/image_clusters.csv \
+  --image-root $IMPACT --image-root-clinical $CLINICAL \
+  --panel data/panel.npz --out results > logs/mae.log 2>&1 &
 tail -f logs/mae.log
 ```
+
+**Optional but recommended for the clinical set:** it contains ~15% non-fetal
+frames (transvaginal, gynaecological, Doppler traces). If `clinical_fetal_gate.csv`
+is on the HPC, pass `--keep-csv data/clinical_fetal_gate.csv` to drop them —
+otherwise the encoder spends capacity on anatomy that is not the fetus.
 
 ## 5. Score — CPU, ~10 minutes, run after all three finish
 
@@ -153,7 +190,8 @@ produce a meaningless null.
 
 | symptom | cause |
 |---|---|
-| `only N fetuses have frames` | `$FRAMES` is wrong — rerun step 2 |
+| `only N fetuses have frames` | `$IMPACT` is wrong — rerun step 2 |
+| pretrain pool == eval pool | `$CLINICAL` is wrong; check `preprocessed/` vs `inpainted/` |
 | `loss did not move` | raise `--lr` or `--epochs`; do not trust the run |
 | `CUDA out of memory` | `--batch 32` (or 16); `--size 160` also helps |
 | `INCONCLUSIVE` in the verdict | send `logs/` — do not read it as a null |

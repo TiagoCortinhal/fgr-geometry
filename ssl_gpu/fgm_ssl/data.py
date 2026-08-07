@@ -20,24 +20,45 @@ class FrameManifest:
     """Resolves fetus_id -> list of image paths, with an optional cohort filter.
 
     manifest_csv needs columns: new_filename, fetus_id, dataset_type.
-    image_root is where the PNGs live; filenames are joined onto it directly.
+
+    THE TWO COHORTS LIVE IN DIFFERENT DIRECTORIES, so `roots` is a dict
+    {dataset_type: path}, e.g. {"impact": /.../impact, "clinical": /.../clinical}.
+    Passing a bare string is accepted and treated as the root for every selected
+    dataset_type.
+
+    The clinical set carries non-fetal frames (transvaginal, gynaecological,
+    Doppler traces) at roughly 15%; pass `keep_csv` (the fetal-gate output) to
+    drop them. Pretraining on those frames would spend capacity on anatomy that
+    is not the fetus.
     """
 
-    def __init__(self, manifest_csv, image_root, dataset_type="impact",
+    def __init__(self, manifest_csv, roots, dataset_type="impact",
                  keep_csv=None, keep_col="keep_fetal"):
         m = pd.read_csv(manifest_csv)
+        if isinstance(dataset_type, str):
+            dataset_type = [dataset_type]
         if dataset_type is not None:
-            m = m[m.dataset_type.astype(str) == dataset_type]
+            m = m[m.dataset_type.astype(str).isin([str(d) for d in dataset_type])]
         if keep_csv is not None and os.path.exists(keep_csv):
             k = pd.read_csv(keep_csv)
             if keep_col in k.columns and "new_filename" in k.columns:
-                ok = set(k.loc[k[keep_col].astype(bool), "new_filename"].astype(str))
-                m = m[m.new_filename.astype(str).isin(ok)]
+                rejected = set(k.loc[~k[keep_col].astype(bool),
+                                     "new_filename"].astype(str))
+                m = m[~m.new_filename.astype(str).isin(rejected)]
         m = m.copy()
         m["fid"] = pd.to_numeric(m.fetus_id, errors="coerce")
         m = m[np.isfinite(m.fid)]
-        m["path"] = [os.path.join(image_root, str(f)) for f in m.new_filename]
+        if isinstance(roots, str):
+            roots = {str(d): roots for d in (dataset_type or ["impact"])}
+        missing = set(m.dataset_type.astype(str)) - set(roots)
+        assert not missing, f"no --image-root given for dataset_type(s): {missing}"
+        m["path"] = [os.path.join(roots[str(d)], str(f))
+                     for d, f in zip(m.dataset_type, m.new_filename)]
         self.df = m.reset_index(drop=True)
+
+    def counts(self):
+        return {str(d): dict(frames=int(len(g)), fetuses=int(g.fid.nunique()))
+                for d, g in self.df.groupby("dataset_type")}
 
     def existing(self):
         """Drop rows whose file is not on disk. Run once; it stats every path."""
@@ -45,8 +66,26 @@ class FrameManifest:
         self.df = self.df[np.array(keep)].reset_index(drop=True)
         return self
 
-    def by_fetus(self):
+    def by_fetus(self, namespaced=False):
+        """fetus key -> paths.
+
+        namespaced=True keys as "<dataset_type>:<fid>". USE IT whenever the two
+        cohorts are combined: their fetus_id numbering is independent, so a
+        clinical fetus 293 and an IMPACT fetus 293 would otherwise be merged into
+        one "fetus" -- which would silently corrupt contrastive training (frames
+        from two different pregnancies treated as positives) and pool unrelated
+        images together.
+        """
+        if namespaced:
+            k = (self.df.dataset_type.astype(str) + ":" +
+                 self.df.fid.astype(int).astype(str))
+            return {str(key): list(g.path) for key, g in self.df.groupby(k)}
         return {int(f): list(g.path) for f, g in self.df.groupby("fid")}
+
+    def id_collision(self):
+        """How many fetus_ids appear in more than one cohort? Diagnostic."""
+        s = self.df.groupby("fid").dataset_type.nunique()
+        return int((s > 1).sum())
 
 
 def fetus_level_folds(fids, n_folds=5, seed=0):
@@ -76,17 +115,30 @@ class FrameDataset(Dataset):
     of the SAME fetus (contrastive positives)."""
 
     def __init__(self, paths_by_fetus, fids, size=224, mode="mae", augment=True):
+        """fids may be ints (IMPACT-only) or namespaced strings like
+        "clinical:293" when the two cohorts are pooled for pretraining.
+
+        Keys are kept as given -- never coerced to int -- because a clinical and
+        an IMPACT fetus can share a numeric id, and merging them would treat
+        frames from two different pregnancies as the same fetus.
+        """
         self.size, self.mode, self.augment = size, mode, augment
         self.items = []
         self.byf = {}
         for f in fids:
-            ps = paths_by_fetus.get(int(f), [])
+            key = f if f in paths_by_fetus else (
+                int(f) if not isinstance(f, str) and int(f) in paths_by_fetus else None)
+            if key is None:
+                continue
+            ps = paths_by_fetus[key]
             if not ps:
                 continue
-            self.byf[int(f)] = ps
+            self.byf[key] = ps
             for p in ps:
-                self.items.append((int(f), p))
-        self.fids = sorted(self.byf)
+                self.items.append((key, p))
+        self.fids = sorted(self.byf, key=str)
+        # integer group codes for the supervised arm's per-fetus pooling
+        self._code = {k: i for i, k in enumerate(self.fids)}
 
     def __len__(self):
         return len(self.items) if self.mode == "mae" else len(self.fids)

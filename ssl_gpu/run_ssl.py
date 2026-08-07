@@ -41,12 +41,16 @@ def get_args():
     p.add_argument("--arm", required=True,
                    choices=["mae", "contrast", "supervised", "frozen"])
     p.add_argument("--manifest", default="data/image_clusters.csv")
-    p.add_argument("--image-root", default="data/frames")
+    p.add_argument("--image-root", required=True,
+                   help="IMPACT frames -- the EVALUATION cohort (has tabular targets)")
+    p.add_argument("--image-root-clinical", default=None,
+                   help="clinical frames -- PRETRAINING ONLY (no tabular targets). "
+                        "Used by mae/contrast; ignored by the supervised arm.")
     p.add_argument("--panel", default="data/panel.npz",
                    help="npz with Z (n,25), cols, blocks, fids, ga, bmi")
     p.add_argument("--keep-csv", default=None,
                    help="optional fetal-gate csv with new_filename,keep_fetal")
-    p.add_argument("--dataset-type", default="impact")
+
     p.add_argument("--out", default="results")
     p.add_argument("--epochs", type=int, default=100)
     p.add_argument("--batch", type=int, default=64)
@@ -111,11 +115,35 @@ def main():
     print(f"[setup] device={dev} arm={a.arm}", flush=True)
 
     Z, cols, blocks, fids, ga, bmi = load_panel(a.panel)
-    man = FrameManifest(a.manifest, a.image_root, a.dataset_type, a.keep_csv).existing()
-    byf = man.by_fetus()
+    roots = {"impact": a.image_root}
+    if a.image_root_clinical:
+        roots["clinical"] = a.image_root_clinical
+
+    # EVALUATION pool: IMPACT only -- it is the cohort with tabular targets.
+    ev = FrameManifest(a.manifest, roots, ["impact"], a.keep_csv).existing()
+    byf = ev.by_fetus()
     have = [int(f) for f in fids if int(f) in byf]
-    print(f"[data] {len(man.df)} frames | {len(have)} fetuses with images "
+    print(f"[data] IMPACT: {len(ev.df)} frames | {len(have)} fetuses with images "
           f"| panel n={len(fids)}", flush=True)
+
+    # PRETRAIN pool: IMPACT + clinical for the unsupervised arms. The clinical
+    # set has no tabular targets, so it cannot be used by the supervised arm --
+    # but it roughly triples the frames available for representation learning,
+    # which is the whole point of an SSL arm on a small cohort.
+    pre_types = ["impact"] + (["clinical"] if a.image_root_clinical else [])
+    if a.arm in ("mae", "contrast") and a.image_root_clinical:
+        pm = FrameManifest(a.manifest, roots, pre_types, a.keep_csv).existing()
+        coll = pm.id_collision()
+        # namespaced keys: the two cohorts number fetuses independently
+        byf_pre = pm.by_fetus(namespaced=True)
+        print(f"[data] PRETRAIN pool: {dict(pm.counts())} "
+              f"| ids shared across cohorts: {coll} (namespaced, not merged)",
+              flush=True)
+    else:
+        byf_pre = None
+        if a.arm == "supervised" and a.image_root_clinical:
+            print("[data] clinical frames IGNORED for the supervised arm "
+                  "(no tabular targets exist for them)", flush=True)
     assert len(have) >= a.min_fetuses, (
         f"only {len(have)} fetuses have frames (--min-fetuses={a.min_fetuses}) "
         f"-- check --image-root")
@@ -143,7 +171,10 @@ def main():
         print(f"[split] train {len(tr_fids)} fetuses | held-out {len(te_fids)}",
               flush=True)
 
-    log = dict(arm=a.arm, epochs=a.epochs, n_frames=int(len(man.df)),
+    log = dict(arm=a.arm, epochs=a.epochs, n_frames_eval=int(len(ev.df)),
+               n_frames_pretrain=int(sum(len(v) for v in byf_pre.values()))
+               if byf_pre is not None else int(len(ev.df)),
+               pretrain_cohorts=pre_types if byf_pre is not None else ["impact"],
                args=vars(a), out_of_fold=bool(oof), folds=[])
 
     def build():
@@ -165,7 +196,15 @@ def main():
 
     def train_one(tr_fids, tag):
         model, mode = build()
-        ds = FrameDataset(byf, tr_fids, a.size, mode=mode)
+        if byf_pre is not None:
+            # train on this fold's IMPACT fetuses PLUS every clinical fetus.
+            # Clinical fetuses are never evaluated, so they cannot leak -- but
+            # IMPACT fetuses held out for scoring must still be excluded here.
+            keys = [f"impact:{int(f)}" for f in tr_fids] + \
+                   [k for k in byf_pre if k.startswith("clinical:")]
+            ds = FrameDataset(byf_pre, keys, a.size, mode=mode)
+        else:
+            ds = FrameDataset(byf, tr_fids, a.size, mode=mode)
         dl = DataLoader(ds, batch_size=a.batch, shuffle=True, num_workers=a.workers,
                         drop_last=True, pin_memory=True)
         opt = torch.optim.AdamW(model.parameters(), lr=a.lr, weight_decay=0.05)
