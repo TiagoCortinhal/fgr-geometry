@@ -1,0 +1,185 @@
+{
+  "prespecification": "prespec_fusion.md \u2014 endpoints, directions, primary comparison and stop rule fixed BEFORE computing",
+  "EXP1_precision_fusion": {
+    "claim": "images predict per-fetus MEASUREMENT RELIABILITY, so Psi_j becomes Psi_j(image)",
+    "design": "leave-one-visit-out deviation from each fetus's own growth line (deg=1, interpolation only); target = log1p(per-fetus RMS deviation) across 4 biometry measures, 827 fetuses, 5629 visit-measures",
+    "BUG_CAUGHT": "first pass used deg=2, which fits the 3 retained points of a 4-visit fetus EXACTLY and turns the held-out prediction into pure extrapolation: deviations reached 584 z-units (fid 293 has two visits 0.1 wk apart with values 0.76 and 10.32). Forced deg=1 + interpolation-only; max |deviation| fell 583.9 -> 22.1 and the per-fetus RMS to a plausible median 0.747.",
+    "result": {
+      "r_adjusted_GA": -0.00791310592788251,
+      "p": 0.571072319201995,
+      "null_p95": 0.061956783724447635,
+      "r_adjusted_GA_BMI": -0.02566578681318823,
+      "bmi_predicts_noise": 0.03566353679888661,
+      "n": 775
+    },
+    "VERDICT": "FAILS. r = -0.008 (p=0.57) against a null p95 of 0.062. And the premise itself is absent: maternal BMI predicts the noise at only r=0.036, so there was no acquisition-driven reliability signal for the images to inherit. The measurement noise in this cohort is not explained by acquisition difficulty at all."
+  },
+  "EXP2_conditional_dependence": {
+    "claim": "blocks independent marginally but coupled within a subgroup",
+    "design": "stratified on birthweight centile (OUTSIDE the panel, avoiding collider conditioning); Omega + cross-block R2 per tertile",
+    "results": {
+      "all": {
+        "n": 250,
+        "Omega": -0.014368967409855493,
+        "null": [
+          -0.020863188400736178,
+          0.006341895074238018
+        ],
+        "verdict": "inside null",
+        "crossR2": 0.02590689838208453
+      },
+      "low centile": {
+        "n": 83,
+        "Omega": 0.017076272186635322,
+        "null": [
+          -0.24519116417393655,
+          -0.003390504718155869
+        ],
+        "verdict": "redundancy",
+        "crossR2": -0.03247413874802372
+      },
+      "mid": {
+        "n": 83,
+        "Omega": -0.1257326302063415,
+        "null": [
+          -0.1850492940115025,
+          -0.002449379875730669
+        ],
+        "verdict": "inside null",
+        "crossR2": -0.030042932188714788
+      },
+      "high": {
+        "n": 83,
+        "Omega": -0.09947746648433409,
+        "null": [
+          -0.18244799891426944,
+          0.007870377639265723
+        ],
+        "verdict": "inside null",
+        "crossR2": -0.03416586130375793
+      }
+    },
+    "VERDICT": "NO COUPLING APPEARS. All 250 complete cases Omega=-0.014 inside null, crossR2=+0.026. Low centile n=83 Omega=+0.017 reads 'redundancy' only because its null band shifts to [-0.245,-0.003] at that sample size -- the point estimate is near zero and the cross-block R2 is NEGATIVE (-0.033). Mid and high tertiles inside their nulls. Cross-block R2 is negative in every stratum, i.e. worse than predicting the mean.",
+    "caveat": "n=83 per tertile is underpowered; this is a failure to detect, not a demonstration of absence"
+  },
+  "EXP3_decision_fusion": {
+    "claim": "near-orthogonal blocks combine multiplicatively; orthogonality is an ASSET for decision fusion",
+    "design": "per-block out-of-fold logistic score -> summed log-odds; PRIMARY = fused vs BEST SINGLE BLOCK",
+    "results": {
+      "SGA": {
+        "best_block": "growth",
+        "best_auc": 0.809856318472084,
+        "fused": 0.8215698049094851,
+        "delta": 0.01171348643740111,
+        "ci": [
+          -0.010180989492211167,
+          0.03277480749536248
+        ],
+        "p": 0.125,
+        "per_block": {
+          "growth": 0.809856318472084,
+          "maternal": 0.5644443142539106,
+          "Doppler": 0.6523522174702677,
+          "cardiac": 0.6460249575253383
+        },
+        "events": 169,
+        "n": 977,
+        "bh_q": 0.26666666666666666,
+        "bh_reject": false
+      },
+      "severeSGA": {
+        "best_block": "growth",
+        "best_auc": 0.8533180614217195,
+        "fused": 0.8798768702126136,
+        "delta": 0.026558808790894117,
+        "ci": [
+          -0.021749023188167963,
+          0.06483279115971978
+        ],
+        "p": 0.0975,
+        "per_block": {
+          "growth": 0.8533180614217195,
+          "maternal": 0.48650583434748373,
+          "Doppler": 0.7415885174314554,
+          "cardiac": 0.7088016321855537
+        },
+        "events": 61,
+        "n": 977,
+        "bh_q": 0.26666666666666666,
+        "bh_reject": false
+      },
+      "AGA": {
+        "best_block": "growth",
+        "best_auc": 0.5871425711521137,
+        "fused": 0.600836364040795,
+        "delta": 0.013693792888681333,
+        "ci": [
+          -0.014002663630059618,
+          0.04176995033432291
+        ],
+        "p": 0.16,
+        "per_block": {
+          "growth": 0.5871425711521137,
+          "maternal": 0.48286677121217175,
+          "Doppler": 0.5573415412676699,
+          "cardiac": 0.5471177693993082
+        },
+        "events": 731,
+        "n": 977,
+        "bh_q": 0.26666666666666666,
+        "bh_reject": false
+      },
+      "LGA": {
+        "best_block": "growth",
+        "best_auc": 0.8396969696969697,
+        "fused": 0.8401298701298702,
+        "delta": 0.00043290043290045155,
+        "ci": [
+          -0.027014158419289256,
+          0.030780135015220277
+        ],
+        "p": 0.4675,
+        "per_block": {
+          "growth": 0.8396969696969697,
+          "maternal": 0.665079365079365,
+          "Doppler": 0.5855988455988456,
+          "cardiac": 0.6796681096681096
+        },
+        "events": 77,
+        "n": 977,
+        "bh_q": 0.5525,
+        "bh_reject": false
+      },
+      "NICU": {
+        "best_block": "growth",
+        "best_auc": 0.6380122726276573,
+        "fused": 0.6308075827306596,
+        "delta": -0.007204689896997629,
+        "ci": [
+          -0.10431143467157689,
+          0.07806599856036484
+        ],
+        "p": 0.5525,
+        "per_block": {
+          "growth": 0.6380122726276573,
+          "maternal": 0.5202991452991453,
+          "Doppler": 0.6100427350427351,
+          "cardiac": 0.6003177733946965
+        },
+        "events": 39,
+        "n": 975,
+        "bh_q": 0.5525,
+        "bh_reject": false
+      }
+    },
+    "VERDICT": "FAILS THE PRESPECIFIED STOP RULE. Fusion never beats its own best block at q<0.10: SGA +0.012 (p=0.125), severeSGA +0.027 (p=0.098), AGA +0.014 (p=0.160), LGA +0.000 (p=0.468), NICU -0.007 (p=0.552). All BH q >= 0.267. Every bootstrap CI for the gain includes zero.",
+    "what_it_does_show": "the growth block is the best single predictor on ALL FIVE endpoints (SGA 0.810, severeSGA 0.853, LGA 0.840) and the other three blocks add nothing detectable on top of it. severeSGA is the closest to a gain (+0.027, p=0.098) and is where I would look with more events."
+  },
+  "OVERALL": "All three fusion routes fail on this cohort. Precision fusion fails at its premise (acquisition does not drive measurement noise here). Conditional dependence shows no coupling in any birthweight stratum, though at n=83 per stratum it is underpowered. Decision fusion produces gains of +0.000 to +0.027 over the best single block, none surviving multiplicity. Combined with the target-free O-information (Omega inside null) and the 477-variable image screen (median r=-0.005), the multimodal question is now closed from four independent directions.",
+  "caveats": [
+    "decision fusion used simple summed log-odds; a learned combiner could differ, but with gains of 0.01-0.03 the headroom is small",
+    "NICU has only 39 events -- underpowered for any fusion claim",
+    "conditional dependence at n=83 per tertile cannot exclude a moderate subgroup effect",
+    "precision fusion tested biometry reliability only; Doppler and cardiac are single-snapshot so no within-fetus reliability target exists for them"
+  ]
+}
