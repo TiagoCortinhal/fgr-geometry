@@ -72,7 +72,9 @@ def get_args():
     p.add_argument("--mask-ratio", type=float, default=0.6)
     p.add_argument("--target", default="cardiac",
                    help="supervised arm only: growth|Doppler|cardiac")
-    p.add_argument("--workers", type=int, default=8)
+    p.add_argument("--workers", type=int, default=-1,
+                   help="dataloader workers; -1 = auto from the CPUs actually "
+                        "visible to this container (os.sched_getaffinity)")
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--cv-folds", type=int, default=5,
                    help="folds for the fetus-level split / out-of-fold supervised training")
@@ -83,6 +85,22 @@ def get_args():
                    help="guard against a wrong --image-root; lower only for smoke tests")
     p.add_argument("--amp", action="store_true", help="mixed precision")
     return p.parse_args()
+
+
+def _grad_scaler(enabled):
+    """torch.amp.GradScaler on new torch, torch.cuda.amp on old. The deprecated
+    path still works but warns on every run; this keeps the logs readable."""
+    try:
+        return torch.amp.GradScaler("cuda", enabled=enabled)
+    except (AttributeError, TypeError):
+        return torch.cuda.amp.GradScaler(enabled=enabled)
+
+
+def _autocast(enabled):
+    try:
+        return torch.amp.autocast("cuda", enabled=enabled)
+    except (AttributeError, TypeError):
+        return torch.cuda.amp.autocast(enabled=enabled)
 
 
 def load_panel(path):
@@ -120,6 +138,14 @@ def embed_all(enc, byf, fids, size, device, batch=128):
 def main():
     a = get_args()
     os.makedirs(a.out, exist_ok=True)
+    os.makedirs("logs", exist_ok=True)
+    if a.workers < 0:
+        try:
+            ncpu = len(os.sched_getaffinity(0))     # respects cgroup limits
+        except AttributeError:
+            ncpu = os.cpu_count() or 2
+        a.workers = max(0, min(8, ncpu - 1))
+        print(f"[setup] workers auto -> {a.workers} (visible CPUs: {ncpu})", flush=True)
     torch.manual_seed(a.seed)
     np.random.seed(a.seed)
     dev = "cuda" if torch.cuda.is_available() else "cpu"
@@ -253,14 +279,14 @@ def main():
                         drop_last=True, pin_memory=True)
         opt = torch.optim.AdamW(model.parameters(), lr=a.lr, weight_decay=0.05)
         sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=a.epochs)
-        scaler = torch.cuda.amp.GradScaler(enabled=a.amp and dev == "cuda")
+        scaler = _grad_scaler(a.amp and dev == "cuda")
         losses = []
         for ep in range(a.epochs):
             model.train()
             tot, nb = 0.0, 0
             for batch in dl:
                 opt.zero_grad(set_to_none=True)
-                with torch.cuda.amp.autocast(enabled=a.amp and dev == "cuda"):
+                with _autocast(a.amp and dev == "cuda"):
                     if a.arm == "mae":
                         x, _ = batch
                         loss, _, _ = model(x.to(dev, non_blocking=True))

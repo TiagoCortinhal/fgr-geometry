@@ -1043,3 +1043,65 @@ def fgm_split_sample_screen(Y, names, IMG, COV, n_top=2, seed=0, nperm=1000, fol
         out["full_cohort"].append(dict(var=nm, r=float(rF), n=int(nF),
                                        flag="NOT independent of selection"))
     return out
+
+
+def fgm_visible_cpus(cap=8, reserve=1):
+    """CPUs actually visible to THIS process -- containers lie via os.cpu_count().
+
+    Inside Apptainer/Docker with a cgroup limit, os.cpu_count() reports the
+    host's cores while only a couple are usable. Passing --workers 8 to a
+    DataLoader in a 2-CPU container triggers "excessive worker creation might
+    get DataLoader running slow or even freeze" and can hang a GPU job for
+    hours. sched_getaffinity respects the cgroup.
+    """
+    import os
+    try:
+        n = len(os.sched_getaffinity(0))
+    except AttributeError:          # macOS
+        n = os.cpu_count() or 2
+    return max(0, min(cap, n - reserve))
+
+
+def fgm_amp_context(enabled=True, device="cuda"):
+    """(GradScaler, autocast_factory) across torch versions.
+
+    torch.cuda.amp.GradScaler/autocast are deprecated in favour of
+    torch.amp.*('cuda', ...). The old path still runs but emits a FutureWarning
+    on every epoch, which buries real messages in a long training log.
+    """
+    import torch
+    try:
+        scaler = torch.amp.GradScaler(device, enabled=enabled)
+
+        def ctx(on=enabled):
+            return torch.amp.autocast(device, enabled=on)
+    except (AttributeError, TypeError):
+        scaler = torch.cuda.amp.GradScaler(enabled=enabled)
+
+        def ctx(on=enabled):
+            return torch.cuda.amp.autocast(enabled=on)
+    return scaler, ctx
+
+
+def fgm_resolve_frame_paths(names, root, exts=(".png", ".jpg", ".jpeg", ".tif")):
+    """Join bare manifest stems to files on disk, probing the extension.
+
+    The IMPACT/clinical manifest stores `new_filename` WITHOUT a suffix
+    (`IMP0324_20171030_1.2.276...`) while the frames on disk are `.png`, so a
+    naive join resolves ZERO files and looks exactly like a wrong --image-root.
+    Probes a sample, picks the winning extension, applies it to all rows.
+
+    Returns (paths, chosen_ext, n_found).
+    """
+    import os
+    names = [str(x) for x in names]
+    sample = names[:40]
+    best, hits = "", sum(os.path.exists(os.path.join(root, s)) for s in sample)
+    for e in exts:
+        h = sum(os.path.exists(os.path.join(root, s + e)) for s in sample)
+        if h > hits:
+            best, hits = e, h
+        if hits == len(sample):
+            break
+    paths = [os.path.join(root, n + best) for n in names]
+    return paths, best, int(sum(os.path.exists(p) for p in paths))

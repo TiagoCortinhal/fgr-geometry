@@ -154,6 +154,19 @@ tried and stops.
 `resnet50` needs only torchvision and is a useful cheap check — it should
 reproduce the maternal-BMI confound and little else.
 
+## 2d. Container CPU limits
+
+The container may expose far fewer CPUs than the host. `--workers` now defaults
+to auto (`sched_getaffinity`, which respects the cgroup) and prints what it
+chose. Passing `--workers 8` inside a 2-CPU container triggers
+"excessive worker creation might get DataLoader running slow or even freeze" —
+believe it; that warning can cost a GPU job hours.
+
+Override only if you know better: `--workers 2`.
+
+`logs/` is created automatically now, so `| tee logs/x.log` works from a fresh
+clone.
+
 ## 3. Environment
 
 ```bash
