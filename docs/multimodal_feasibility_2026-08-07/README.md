@@ -18,6 +18,17 @@ BMI enters.
 **What the frozen encoder encodes is acquisition condition** — maternal habitus
 sets ultrasound penetration and the embedding reads it off the pixels.
 
+*Correction (post-review, second):* the radiomics-vs-USFM comparison must NOT be
+cited as showing the image null is "encoder-general". The two representations
+correlate at held-out cc = 0.963 — they are near-interchangeable frame-level
+summaries of the same pixels, so agreement between them is EXPECTED regardless
+of the underlying information and tests encoder architecture, not information
+content. What the radiomics run does support: the maternal-BMI confound
+reproduces without a neural encoder (0.298 -> 0.023 on BMI adjustment), and
+Doppler is null on radiomics too. A genuine encoder-independence claim needs a
+representation that does NOT correlate at 0.96 with USFM — the cohort-trained
+SSL encoder is the candidate, which is part of why that run matters.
+
 *Correction (post-review):* the growth block was first reported as a null
 (-0.179) but that rung residualised the biometry target on the biometry block
 itself and was degenerate. Redone with valid adjustment (GA + maternal BMI only)
