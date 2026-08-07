@@ -741,17 +741,21 @@ def fgm_nuisance_design(GA, EFW, BIO):
     return np.column_stack([np.ones(n), g, e, b])
 
 
-def fgm_visit_deviations(measures=None, min_visits=3, repo=None):
-    """Per-visit deviation from each fetus's OWN smooth growth curve.
+def fgm_visit_deviations(measures=None, min_visits=3, repo=None, interpolate_only=True):
+    """Per-visit deviation from each fetus's OWN growth line, leave-one-visit-out.
 
     A fetus cannot leave its own trajectory and rejoin it, so the deviation of a
-    visit from a curve fitted through that fetus's other visits approximates
-    MEASUREMENT ERROR rather than biology. This is the cleanest reliability
-    target available in a cohort with no repeated measurements per visit.
+    visit from a line fitted through that fetus's OTHER visits approximates
+    MEASUREMENT ERROR rather than biology.
 
-    Leave-one-visit-out: the curve for visit t is fitted WITHOUT visit t, so the
-    deviation is out-of-sample. Requires min_visits >= 3 (a 2-visit fetus has no
-    curve to leave out against).
+    TWO GUARDS, both learned the hard way:
+    (1) DEGREE 1 ONLY. A quadratic through the 3 retained points of a 4-visit
+        fetus fits them exactly and the held-out prediction becomes a pure
+        extrapolation -- this produced deviations of 584 z-units on a z-score,
+        driven by fetuses with two visits ~0.1 weeks apart.
+    (2) INTERPOLATION ONLY (interpolate_only=True). The held-out GA must lie
+        inside the retained GA range; extrapolating past the ends is where the
+        remaining blow-ups live.
 
     Returns a DataFrame: fid, visit, ga_weeks, measure, value, fitted, deviation.
     """
@@ -773,8 +777,12 @@ def fgm_visit_deviations(measures=None, min_visits=3, repo=None):
             y = sub[meas].to_numpy(float)
             for i in range(len(sub)):
                 keep = np.arange(len(sub)) != i
-                deg = 1 if keep.sum() < 4 else 2
-                c = np.polyfit(ga[keep], y[keep], deg)
+                gk = ga[keep]
+                if interpolate_only and not (gk.min() <= ga[i] <= gk.max()):
+                    continue
+                if np.ptp(gk) < 1e-6:
+                    continue
+                c = np.polyfit(gk, y[keep], 1)
                 fit = float(np.polyval(c, ga[i]))
                 rows.append(dict(fid=int(fid), visit=str(sub.visit.iloc[i]),
                                  ga_weeks=float(ga[i]), measure=meas,
