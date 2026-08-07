@@ -1,4 +1,7 @@
 # SSL / fine-tuned encoder vs frozen USFM — GPU package
+#
+# QUICK START (you are on the node, in a terminal): see RUN.md
+
 
 Tests whether an encoder trained **on our own frames** recovers cross-modal
 signal that frozen pooled features miss. Read `PRESPEC.md` first — endpoints,
@@ -71,6 +74,13 @@ which must be strong — it is the confound we already measured at 0.512 raw).
 **both** the image and the target, and drops a covariate when it *is* the
 target — the degenerate-self-adjustment defect caught in review earlier.
 
+**3b. Scoring a trained encoder on its own training fetuses.** The supervised
+arm sees the target during training, so scoring it on those fetuses measures
+memorisation. It runs OUT-OF-FOLD (K models, each embedding only its held-out
+fold) and `score_arms.py` honours `heldout_fids` for every trained arm. A smoke
+test with the leak present reported +0.851 on the trained block and ~0 on all
+others.
+
 **4. Bootstrap inside cross-validation.** The stop-rule interval is the spread
 over *independent CV seeds* (`split_spread_delta`), not a bootstrap. Resampling
 rows with replacement into a statistic that runs its own KFold duplicates
@@ -96,8 +106,13 @@ multimodal null and becomes the paper.
 
 ## Smoke test
 
-The package was validated on synthetic frames with a planted per-fetus factor:
-the supervised arm recovered it at adjusted cc = +0.851 while returning
-−0.034 and −0.010 on the two unplanted blocks, and the gate correctly refused a
-verdict. That is the design's positive control — it can find signal when signal
-is there.
+The package was validated end-to-end on synthetic frames with a planted
+per-fetus factor: all arms train, the fetus-level splitter never leaks, the
+out-of-fold path scores every fetus from a model that never saw it, and the gate
+correctly refuses a verdict when the positive control fails.
+
+An earlier version of this smoke test reported +0.851 for the supervised arm on
+its own trained block. That was the training-fetus leak, not a positive control,
+and it is what motivated the out-of-fold path. The honest positive control on
+real data is C1 (image → maternal BMI, expected strong from the frozen-feature
+result of 0.512).

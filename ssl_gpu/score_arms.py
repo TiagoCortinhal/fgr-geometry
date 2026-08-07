@@ -65,21 +65,45 @@ def main():
     endpoints["C1_maternal_BMI"] = np.asarray(bmi).reshape(-1, 1)
     endpoints["C2_GA"] = np.asarray(ga).reshape(-1, 1)
 
-    arms = {}
+    # ---- SCORING MASK: a trained encoder must NEVER be scored on the fetuses it
+    # trained on. The supervised arm sees the target block during training, so
+    # scoring it on its own training fetuses measures memorisation, not signal
+    # (a smoke test scored +0.851 on the block it was trained on and ~0 on every
+    # other block -- the signature of exactly this leak). run_ssl.py records
+    # heldout_fids in each npz; we honour it here.
+    arms, masks = {}, {}
     if os.path.exists(a.frozen):
         fz = np.load(a.frozen, allow_pickle=True)
         arms["frozen"] = to_pcs(fz["E"], a.n_pc)
+        masks["frozen"] = np.ones(len(fids), bool)  # never trained: all rows usable
     for f in sorted(glob.glob(os.path.join(a.results, "*_embeddings.npz"))):
         nm = os.path.basename(f).replace("_embeddings.npz", "")
-        arms[nm] = to_pcs(np.load(f)["E"], a.n_pc)
+        z2 = np.load(f, allow_pickle=True)
+        arms[nm] = to_pcs(z2["E"], a.n_pc)
+        if "heldout_fids" in z2.files:
+            ho = {int(x) for x in z2["heldout_fids"]}
+            masks[nm] = np.array([int(x) in ho for x in fids])
+        else:
+            raise SystemExit(f"{f} has no heldout_fids -- retrain with the current "
+                             f"run_ssl.py; scoring a trained arm on its training "
+                             f"fetuses is not permitted")
     assert arms, "no embeddings found -- run run_ssl.py first"
-    print(f"[score] arms: {list(arms)}", flush=True)
+    for nm in arms:
+        print(f"[score] {nm:12s} scoring on {int(masks[nm].sum()):4d} fetuses "
+              f"({'held-out only' if nm != 'frozen' else 'all -- never trained'})",
+              flush=True)
 
     out = {}
     for nm, IMG in arms.items():
-        out[nm] = evaluate_arm(IMG, Z, ga, bmi, endpoints, n_perm=a.n_perm, min_n=a.min_n)
+        mk = masks[nm]
+        IMGm = np.where(mk[:, None], IMG, np.nan)   # NaN rows are dropped downstream
+        out[nm] = evaluate_arm(IMGm, Z, ga, bmi, endpoints, n_perm=a.n_perm,
+                               min_n=a.min_n)
+        out[nm]["_scored_on"] = dict(n=int(mk.sum()),
+                                     basis="held-out fetuses only" if nm != "frozen"
+                                     else "all fetuses (never trained)")
         for e, r in out[nm].items():
-            if r.get("skipped"):
+            if e.startswith("_") or not isinstance(r, dict) or r.get("skipped"):
                 continue
             lad = r["ladder"]
             fin = lad.get("GA+BMI", lad.get("adjusted", float("nan")))
@@ -120,7 +144,9 @@ def main():
                     continue
                 tgt = endpoints[e]
                 Y = Z[:, tgt] if np.asarray(tgt).dtype.kind == "i" else np.asarray(tgt)
-                keep = (np.isfinite(IMG).all(1) & np.isfinite(ref).all(1) &
+                # compare the arms on the SAME fetuses, and only ones the new
+                # encoder never trained on
+                keep = (masks[nm] & np.isfinite(IMG).all(1) & np.isfinite(ref).all(1) &
                         (np.isfinite(Y).sum(1) >= Y.shape[1] - 1))
                 if keep.sum() < a.min_n:
                     continue
@@ -161,7 +187,7 @@ def main():
     ps, lbl = [], []
     for nm in arms:
         for e, r in out[nm].items():
-            if isinstance(r, dict) and "p" in r:
+            if not e.startswith("_") and isinstance(r, dict) and "p" in r:
                 ps.append(r["p"])
                 lbl.append(f"{nm}|{e}")
     if ps:

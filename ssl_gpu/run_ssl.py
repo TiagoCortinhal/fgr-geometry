@@ -59,6 +59,11 @@ def get_args():
                    help="supervised arm only: growth|Doppler|cardiac")
     p.add_argument("--workers", type=int, default=8)
     p.add_argument("--seed", type=int, default=0)
+    p.add_argument("--cv-folds", type=int, default=5,
+                   help="folds for the fetus-level split / out-of-fold supervised training")
+    p.add_argument("--no-oof", action="store_true",
+                   help="supervised arm: single split instead of out-of-fold (faster, "
+                        "but then only 1/K of fetuses are scorable)")
     p.add_argument("--min-fetuses", type=int, default=100,
                    help="guard against a wrong --image-root; lower only for smoke tests")
     p.add_argument("--amp", action="store_true", help="mixed precision")
@@ -120,92 +125,123 @@ def main():
               "score_arms.py --arm frozen", flush=True)
         return
 
-    tr_fids, te_fids = next(fetus_level_folds(have, n_folds=5, seed=a.seed))
-    assert not (set(tr_fids) & set(te_fids)), "FETUS LEAK between train and test"
-    print(f"[split] train {len(tr_fids)} fetuses | held-out {len(te_fids)}", flush=True)
-
-    log = dict(arm=a.arm, epochs=a.epochs, n_train_fetuses=len(tr_fids),
-               n_frames=int(len(man.df)), losses=[], args=vars(a))
-
-    if a.arm == "mae":
-        model = MAE(a.dim, a.width, mask_ratio=a.mask_ratio).to(dev)
-        ds = FrameDataset(byf, tr_fids, a.size, mode="mae")
-        dl = DataLoader(ds, batch_size=a.batch, shuffle=True, num_workers=a.workers,
-                        drop_last=True, pin_memory=True)
-    elif a.arm == "contrast":
-        model = ContrastiveNet(a.dim, a.width).to(dev)
-        ds = FrameDataset(byf, tr_fids, a.size, mode="pair")
-        dl = DataLoader(ds, batch_size=a.batch, shuffle=True, num_workers=a.workers,
-                        drop_last=True, pin_memory=True)
+    # The supervised arm SEES THE TARGET during training, so scoring it on its
+    # own training fetuses measures memorisation. It therefore runs OUT-OF-FOLD:
+    # K models, each embedding only the fold it never trained on, so every fetus
+    # ends up with an embedding from a model that never saw its targets.
+    # MAE/contrastive never see targets, so a single pretrain is fine -- but they
+    # still record their held-out fold so scoring can honour it.
+    oof = (a.arm == "supervised") and not a.no_oof
+    folds = list(fetus_level_folds(have, n_folds=a.cv_folds, seed=a.seed))
+    for tr_, te_ in folds:
+        assert not (set(tr_) & set(te_)), "FETUS LEAK between train and test"
+    if oof:
+        print(f"[split] OUT-OF-FOLD: {a.cv_folds} models, each embedding its own "
+              f"held-out fold ({len(have)} fetuses total)", flush=True)
     else:
+        tr_fids, te_fids = folds[0]
+        print(f"[split] train {len(tr_fids)} fetuses | held-out {len(te_fids)}",
+              flush=True)
+
+    log = dict(arm=a.arm, epochs=a.epochs, n_frames=int(len(man.df)),
+               args=vars(a), out_of_fold=bool(oof), folds=[])
+
+    def build():
+        if a.arm == "mae":
+            m = MAE(a.dim, a.width, mask_ratio=a.mask_ratio).to(dev)
+            return m, "mae"
+        if a.arm == "contrast":
+            return ContrastiveNet(a.dim, a.width).to(dev), "pair"
         tix = [i for i, b in enumerate(blocks) if b == a.target]
         assert tix, f"no columns for target block {a.target}"
-        model = SupervisedNet(len(tix), a.dim, a.width).to(dev)
-        ds = FrameDataset(byf, tr_fids, a.size, mode="mae")
-        dl = DataLoader(ds, batch_size=a.batch, shuffle=True, num_workers=a.workers,
-                        drop_last=True, pin_memory=True)
+        return SupervisedNet(len(tix), a.dim, a.width).to(dev), "mae"
+
+    tix = [i for i, b in enumerate(blocks) if b == a.target] if a.arm == "supervised" else []
+    if tix:
         pos = {int(f): i for i, f in enumerate(fids)}
         Yt = np.where(np.isfinite(Z[:, tix]), Z[:, tix], 0.0).astype("float32")
         Mt = np.isfinite(Z[:, tix]).astype("float32")
-        log["target_block"] = a.target
-        log["target_cols"] = [cols[i] for i in tix]
+        log["target_block"], log["target_cols"] = a.target, [cols[i] for i in tix]
 
-    opt = torch.optim.AdamW(model.parameters(), lr=a.lr, weight_decay=0.05)
-    sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=a.epochs)
-    scaler = torch.cuda.amp.GradScaler(enabled=a.amp and dev == "cuda")
+    def train_one(tr_fids, tag):
+        model, mode = build()
+        ds = FrameDataset(byf, tr_fids, a.size, mode=mode)
+        dl = DataLoader(ds, batch_size=a.batch, shuffle=True, num_workers=a.workers,
+                        drop_last=True, pin_memory=True)
+        opt = torch.optim.AdamW(model.parameters(), lr=a.lr, weight_decay=0.05)
+        sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=a.epochs)
+        scaler = torch.cuda.amp.GradScaler(enabled=a.amp and dev == "cuda")
+        losses = []
+        for ep in range(a.epochs):
+            model.train()
+            tot, nb = 0.0, 0
+            for batch in dl:
+                opt.zero_grad(set_to_none=True)
+                with torch.cuda.amp.autocast(enabled=a.amp and dev == "cuda"):
+                    if a.arm == "mae":
+                        x, _ = batch
+                        loss, _, _ = model(x.to(dev, non_blocking=True))
+                    elif a.arm == "contrast":
+                        xa, xb, _ = batch
+                        loss, _ = model(xa.to(dev), xb.to(dev))
+                    else:
+                        x, f = batch
+                        uniq, grp = torch.unique(f, return_inverse=True)
+                        rows = [pos[int(u)] for u in uniq]
+                        yb = torch.from_numpy(Yt[rows]).to(dev)
+                        mb = torch.from_numpy(Mt[rows]).to(dev)
+                        pred, _ = model(x.to(dev), grp.to(dev))
+                        loss = (((pred - yb) ** 2) * mb).sum() / mb.sum().clamp(min=1)
+                scaler.scale(loss).backward()
+                scaler.step(opt)
+                scaler.update()
+                tot += float(loss.item())
+                nb += 1
+            sched.step()
+            losses.append(tot / max(nb, 1))
+            if ep % 10 == 0 or ep == a.epochs - 1:
+                print(f"[train {tag}] epoch {ep:3d}/{a.epochs}  loss {losses[-1]:.5f}  "
+                      f"{time.time()-t0:.0f}s", flush=True)
+        assert losses[-1] < losses[0] * 0.98, (
+            f"{tag}: loss did not move ({losses[0]:.5f} -> {losses[-1]:.5f}); a null "
+            f"from this run would be meaningless -- check lr/batch")
+        return model, losses
+
     t0 = time.time()
+    E = np.full((len(fids), a.dim), np.nan, dtype="float32")
+    scored = []
+    if oof:
+        for k, (tr_fids, te_fids) in enumerate(folds):
+            model, losses = train_one(tr_fids, f"fold{k}")
+            Ek, _ = embed_all(model.enc, byf, te_fids, a.size, dev)
+            ix = {int(f): i for i, f in enumerate(fids)}
+            for f, row in zip(te_fids, Ek):
+                E[ix[int(f)]] = row
+            scored += [int(f) for f in te_fids]
+            log["folds"].append(dict(fold=k, n_train=len(tr_fids), n_heldout=len(te_fids),
+                                     loss_first=losses[0], loss_last=losses[-1]))
+        heldout, trained = np.array(sorted(scored)), np.array([], dtype=int)
+    else:
+        tr_fids, te_fids = folds[0]
+        model, losses = train_one(tr_fids, "single")
+        Eall, _ = embed_all(model.enc, byf, fids, a.size, dev)
+        E = Eall.astype("float32")
+        heldout, trained = np.array(te_fids), np.array(tr_fids)
+        log["folds"].append(dict(fold=0, n_train=len(tr_fids), n_heldout=len(te_fids),
+                                 loss_first=losses[0], loss_last=losses[-1]))
 
-    for ep in range(a.epochs):
-        model.train()
-        tot, nb = 0.0, 0
-        for batch in dl:
-            opt.zero_grad(set_to_none=True)
-            with torch.cuda.amp.autocast(enabled=a.amp and dev == "cuda"):
-                if a.arm == "mae":
-                    x, _ = batch
-                    loss, _, _ = model(x.to(dev, non_blocking=True))
-                elif a.arm == "contrast":
-                    xa, xb, _ = batch
-                    loss, _ = model(xa.to(dev), xb.to(dev))
-                else:
-                    x, f = batch
-                    uniq, grp = torch.unique(f, return_inverse=True)
-                    rows = [pos[int(u)] for u in uniq]
-                    yb = torch.from_numpy(Yt[rows]).to(dev)
-                    mb = torch.from_numpy(Mt[rows]).to(dev)
-                    pred, _ = model(x.to(dev), grp.to(dev))
-                    loss = (((pred - yb) ** 2) * mb).sum() / mb.sum().clamp(min=1)
-            scaler.scale(loss).backward()
-            scaler.step(opt)
-            scaler.update()
-            tot += float(loss.item())
-            nb += 1
-        sched.step()
-        log["losses"].append(tot / max(nb, 1))
-        if ep % 5 == 0 or ep == a.epochs - 1:
-            print(f"[train] epoch {ep:3d}/{a.epochs}  loss {tot / max(nb,1):.5f}  "
-                  f"{time.time()-t0:.0f}s", flush=True)
-
-    first, last = log["losses"][0], log["losses"][-1]
-    assert last < first * 0.98, (
-        f"loss did not move ({first:.5f} -> {last:.5f}); a null from this run "
-        f"would be meaningless -- check lr/batch before trusting any result")
-
-    enc = model.enc
-    E, keep = embed_all(enc, byf, fids, a.size, dev)
     sd = np.nanstd(E, axis=0)
     assert np.isfinite(sd).any() and np.nanmax(sd) > 1e-4, \
         "embedding variance collapsed -- refusing to write"
     np.savez_compressed(os.path.join(a.out, f"{a.arm}_embeddings.npz"),
-                        E=E, fids=fids, heldout_fids=np.array(te_fids),
-                        train_fids=np.array(tr_fids))
-    log["loss_first"], log["loss_last"] = first, last
+                        E=E, fids=fids, heldout_fids=heldout, train_fids=trained)
     log["embed_dim"] = int(E.shape[1])
-    log["n_embedded"] = int(len(keep))
+    log["n_scorable"] = int(len(heldout))
     log["minutes"] = round((time.time() - t0) / 60, 1)
     json.dump(log, open(os.path.join(a.out, f"{a.arm}_log.json"), "w"), indent=1)
-    print(f"[done] {a.arm}: loss {first:.5f} -> {last:.5f} | "
-          f"{len(keep)} fetuses embedded | {log['minutes']} min", flush=True)
+    print(f"[done] {a.arm}: {len(heldout)} fetuses scorable "
+          f"({'out-of-fold' if oof else 'held-out fold only'}) | "
+          f"{log['minutes']} min", flush=True)
 
 
 if __name__ == "__main__":

@@ -42,13 +42,14 @@ ok=os.path.exists(os.path.join(D,"res","mae_embeddings.npz"))
 print("TEST mae wrote embeddings:", ok)
 if ok:
     lg=json.load(open(os.path.join(D,"res","mae_log.json")))
-    print("   loss",round(lg["loss_first"],4),"->",round(lg["loss_last"],4),
-          "| dim",lg["embed_dim"],"| fetuses",lg["n_embedded"])
+    f0=lg["folds"][0]
+    print("   loss",round(f0["loss_first"],4),"->",round(f0["loss_last"],4),
+          "| dim",lg["embed_dim"],"| scorable",lg["n_scorable"],"| oof",lg["out_of_fold"])
 # --- test 4: supervised arm
 os.system(f"cd /Users/tiago/dev/fgr-geometry/ssl_gpu && "
   f"/Users/tiago/.claude-science/conda/envs/fgrgeom/bin/python run_ssl.py --arm supervised "
   f"--manifest {D}/man.csv --image-root {F} --panel {D}/panel.npz --out {D}/res "
-  f"--epochs 6 --batch 16 --size 64 --width 8 --dim 32 --workers 0 --min-fetuses 10 --target growth 2>&1 | tail -4")
+  f"--epochs 6 --batch 16 --size 64 --width 8 --dim 32 --workers 0 --min-fetuses 10 --cv-folds 3 --target growth 2>&1 | tail -4")
 print("TEST supervised wrote:", os.path.exists(os.path.join(D,"res","supervised_embeddings.npz")))
 # --- test 5: scoring runs and recovers the planted growth signal
 np.savez(os.path.join(D,"frozen.npz"),E=rng.normal(size=(NF,32)),fids=np.arange(NF))
