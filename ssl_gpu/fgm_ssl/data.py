@@ -213,3 +213,58 @@ class FrameDataset(Dataset):
         a = self._aug(load_gray(ps[j], self.size))
         b = self._aug(load_gray(ps[k], self.size))
         return torch.from_numpy(a)[None], torch.from_numpy(b)[None], f
+
+
+def build_frame_cache(paths, cache_path, size=224, log_every=2000):
+    """Decode every PNG ONCE into a uint8 memmap; epochs then read from RAM.
+
+    The binding constraint on a CPU-starved node is PNG decode, not GPU compute:
+    with one dataloader worker, 17k frames/epoch takes ~158 s while the network
+    itself needs ~5 s. Decoding once and reusing the array removes that entirely
+    -- 21k frames at 224x224 uint8 is ~1.1 GB, which fits comfortably in RAM.
+
+    Returns (memmap, index) where index maps path -> row.
+    """
+    import numpy as np
+    n = len(paths)
+    arr = np.lib.format.open_memmap(cache_path, mode="w+", dtype="uint8",
+                                    shape=(n, size, size))
+    for i, p in enumerate(paths):
+        arr[i] = (load_gray(p, size) * 255).astype("uint8")
+        if log_every and i % log_every == 0:
+            print(f"  [cache] {i}/{n}", flush=True)
+    arr.flush()
+    return arr, {p: i for i, p in enumerate(paths)}
+
+
+class CachedFrameDataset(FrameDataset):
+    """FrameDataset backed by a decoded uint8 cache instead of PNG files.
+
+    Identical semantics and identical augmentation -- only the source of pixels
+    changes, so a run with and without the cache is the same experiment.
+    """
+
+    def __init__(self, paths_by_fetus, fids, cache, index, size=224,
+                 mode="mae", augment=True):
+        super().__init__(paths_by_fetus, fids, size=size, mode=mode,
+                         augment=augment)
+        self.cache, self.index = cache, index
+
+    def _load(self, path):
+        import numpy as np
+        i = self.index.get(path)
+        if i is None:
+            return load_gray(path, self.size)
+        return self.cache[i].astype("float32") / 255.0
+
+    def __getitem__(self, i):
+        import numpy as np
+        import torch
+        if self.mode == "mae":
+            f, p = self.items[i]
+            return torch.from_numpy(self._aug(self._load(p)))[None], f
+        f = self.fids[i]
+        ps = self.byf[f]
+        j, k = np.random.choice(len(ps), 2, replace=len(ps) < 2)
+        return (torch.from_numpy(self._aug(self._load(ps[j])))[None],
+                torch.from_numpy(self._aug(self._load(ps[k])))[None], f)

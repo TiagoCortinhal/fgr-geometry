@@ -170,6 +170,28 @@ before python could create the directory -- a `makedirs` inside the script does
 NOT save you here. Step 0 already creates both; if you cloned fresh, run it
 again.
 
+## 2e. Frame cache — do this if an epoch takes minutes
+
+On a CPU-starved node PNG decode, not the GPU, is the bottleneck: one dataloader
+worker manages ~107 frames/s, so a 17k-frame epoch takes ~158 s while the network
+itself needs ~5 s. Over 60 epochs x 5 folds that is **13 hours of mostly-idle GPU**.
+
+`--cache` decodes every frame ONCE into a uint8 memmap and trains from RAM:
+
+```bash
+python run_ssl.py --arm supervised --epochs 60 --batch 64 --amp \
+  --target Doppler --manifest data/image_clusters.csv --image-root $IMPACT \
+  --panel data/panel.npz --out results --cache cache_impact224.npy \
+  2>&1 | tee logs/supervised_doppler.log
+```
+
+~1.1 GB for 21k frames at 224x224 (0.5 GB at 160). The cache is built once and
+reused by later runs, including the other arms — so arms 2 and 3 start training
+immediately. Add clinical frames and it grows proportionally (~3.5 GB for 68k).
+
+The cache changes speed only: augmentation and sampling are unchanged, and a
+cached run reproduces an uncached one exactly.
+
 ## 3. Environment
 
 ```bash

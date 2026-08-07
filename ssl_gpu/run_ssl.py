@@ -32,7 +32,8 @@ from torch.utils.data import DataLoader
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from fgm_ssl.data import FrameDataset, FrameManifest, fetus_level_folds
+from fgm_ssl.data import (CachedFrameDataset, FrameDataset, FrameManifest,
+                          build_frame_cache, fetus_level_folds)
 from fgm_ssl.models import MAE, ContrastiveNet, SupervisedNet
 
 
@@ -81,6 +82,10 @@ def get_args():
     p.add_argument("--no-oof", action="store_true",
                    help="supervised arm: single split instead of out-of-fold (faster, "
                         "but then only 1/K of fetuses are scorable)")
+    p.add_argument("--cache", default=None,
+                   help="decode every frame ONCE into this uint8 .npy and train "
+                        "from RAM. Removes the PNG-decode bottleneck (~30x on a "
+                        "CPU-starved node). ~1.1 GB for 21k frames at 224.")
     p.add_argument("--min-fetuses", type=int, default=100,
                    help="guard against a wrong --image-root; lower only for smoke tests")
     p.add_argument("--amp", action="store_true", help="mixed precision")
@@ -244,6 +249,27 @@ def main():
         print(f"[split] train {len(tr_fids)} fetuses | held-out {len(te_fids)}",
               flush=True)
 
+    CACHE = {"arr": None, "idx": None}
+    if a.cache:
+        pool = byf_pre if byf_pre is not None else byf
+        allp = sorted({p for v in pool.values() for p in v})
+        if os.path.exists(a.cache):
+            CACHE["arr"] = np.load(a.cache, mmap_mode="r")
+            CACHE["idx"] = json.load(open(a.cache + ".idx.json"))
+            print(f"[cache] reusing {a.cache} ({CACHE['arr'].shape})", flush=True)
+            if len(CACHE["idx"]) != len(allp):
+                raise SystemExit(
+                    f"cache has {len(CACHE['idx'])} frames but this run needs "
+                    f"{len(allp)} -- delete {a.cache} and let it rebuild")
+        else:
+            print(f"[cache] decoding {len(allp)} frames once -> {a.cache} "
+                  f"(~{len(allp)*a.size*a.size/1e9:.1f} GB)", flush=True)
+            tc = time.time()
+            arr, idx = build_frame_cache(allp, a.cache, size=a.size)
+            json.dump(idx, open(a.cache + ".idx.json", "w"))
+            CACHE["arr"], CACHE["idx"] = arr, idx
+            print(f"[cache] built in {(time.time()-tc)/60:.1f} min", flush=True)
+
     log = dict(arm=a.arm, epochs=a.epochs, n_frames_eval=int(len(ev.df)),
                n_frames_pretrain=int(sum(len(v) for v in byf_pre.values()))
                if byf_pre is not None else int(len(ev.df)),
@@ -269,15 +295,19 @@ def main():
 
     def train_one(tr_fids, tag):
         model, mode = build()
+        mk = (lambda src, keys: CachedFrameDataset(
+                  src, keys, CACHE["arr"], CACHE["idx"], a.size, mode=mode)
+              ) if CACHE["arr"] is not None else (
+              lambda src, keys: FrameDataset(src, keys, a.size, mode=mode))
         if byf_pre is not None:
             # train on this fold's IMPACT fetuses PLUS every clinical fetus.
             # Clinical fetuses are never evaluated, so they cannot leak -- but
             # IMPACT fetuses held out for scoring must still be excluded here.
             keys = [f"impact:{int(f)}" for f in tr_fids] + \
                    [k for k in byf_pre if k.startswith("clinical:")]
-            ds = FrameDataset(byf_pre, keys, a.size, mode=mode)
+            ds = mk(byf_pre, keys)
         else:
-            ds = FrameDataset(byf, tr_fids, a.size, mode=mode)
+            ds = mk(byf, tr_fids)
         dl = DataLoader(ds, batch_size=a.batch, shuffle=True, num_workers=a.workers,
                         drop_last=True, pin_memory=True)
         opt = torch.optim.AdamW(model.parameters(), lr=a.lr, weight_decay=0.05)

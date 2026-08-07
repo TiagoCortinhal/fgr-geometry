@@ -49,7 +49,7 @@ if ok:
 os.system(f"cd /Users/tiago/dev/fgr-geometry/ssl_gpu && "
   f"/Users/tiago/.claude-science/conda/envs/fgrgeom/bin/python run_ssl.py --arm supervised "
   f"--manifest {D}/man.csv --image-root {F} --panel {D}/panel.npz --out {D}/res "
-  f"--epochs 6 --batch 16 --size 64 --width 8 --dim 32 --workers 0 --min-fetuses 10 --cv-folds 3 --target growth 2>&1 | tail -4")
+  f"--epochs 6 --batch 16 --size 64 --width 8 --dim 32 --workers 0 --min-fetuses 10 --cv-folds 3 --cache {D}/cache.npy --target growth 2>&1 | tail -4")
 print("TEST supervised wrote:", os.path.exists(os.path.join(D,"res","supervised_embeddings.npz")))
 # --- test 5: scoring runs and recovers the planted growth signal
 np.savez(os.path.join(D,"frozen.npz"),E=rng.normal(size=(NF,32)),fids=np.arange(NF))
