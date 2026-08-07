@@ -1,0 +1,11 @@
+area,doi,title,venue,relevance
+ultrasound SSL,10.1109/isbi45749.2020.9098666,Self-Supervised Representation Learning for Ultrasound Video,ISBI 2020,ISBI precedent; video SSL without annotation
+ultrasound SSL,10.1007/978-3-030-87237-3_60,USCL: Pretraining Deep Ultrasound Image Diagnosis Model Through Video Contrastive Representation Learning,MICCAI 2021,video contrastive pretraining recipe
+ultrasound SSL,10.1007/978-3-031-25066-8_23,Anatomy-Aware Contrastive Representation Learning for Fetal Ultrasound,2023,"closest recipe to our cohort: fetal, anatomy-aware contrastive"
+ultrasound SSL,10.1016/j.ultrasmedbio.2024.01.010,FUSC: Fetal Ultrasound Semantic Clustering of Second-Trimester Scans,Ultrasound Med Biol 2024,"unsupervised on 88,063 fetal images; scale reference"
+ultrasound SSL,10.1016/j.media.2024.103202,USFM: A universal ultrasound foundation model,Med Image Anal 2024,the encoder currently used
+low-regime,10.1038/s41586-024-08328-6,Accurate predictions on small data with a tabular foundation model,Nature 2025,n<10k tabular regime; our n=977
+low-regime,10.1186/s40537-023-00727-2,A survey on deep learning tools dealing with data scarcity,J Big Data 2023,scarcity strategy taxonomy
+low-regime,10.1016/j.patcog.2021.108111,MetaMed: Few-shot medical image classification using gradient-based meta-learning,Pattern Recogn 2021,few-shot medical imaging; image-label tasks only
+orthogonal/fusion,10.1016/j.neunet.2024.107096,ICH-PRNet: cross-modal intracerebral haemorrhage prognostic prediction,Neural Networks 2025,imaging+tabular fusion that assumes complementarity without testing it
+generalisability,10.1038/s41598-023-29490-3,Generalisability of fetal ultrasound deep learning models,Sci Rep 2023,fetal-US models degrade across acquisition settings
