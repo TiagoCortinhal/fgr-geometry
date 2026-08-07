@@ -102,7 +102,11 @@ def load_usfm(weights, layer=5, device="cpu", repo=None):
         init_values=0.1, use_abs_pos_emb=False, use_rel_pos_bias=False,
         use_shared_rel_pos_bias=True, use_mean_pooling=True,
         norm_layer=partial(nn.LayerNorm, eps=1e-6))
-    ck = torch.load(weights, map_location="cpu")
+    # weights_only=False is explicit, not accidental: the USFM checkpoint is a
+    # pickled dict of tensors plus training metadata, which the weights_only
+    # loader rejects. Torch will flip this default in a future release, so
+    # naming it here keeps the load working rather than breaking silently.
+    ck = torch.load(weights, map_location="cpu", weights_only=False)
     model.load_state_dict(ck.get("model", ck.get("state_dict", ck)), strict=False)
     model.eval().to(device)
 
