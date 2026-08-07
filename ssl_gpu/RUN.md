@@ -10,33 +10,26 @@ mkdir -p data results logs
 
 (Already cloned? `git pull` — the package is under `ssl_gpu/`.)
 
-## 1. The two data files
+## 1. The four data files — NOT in the repo
 
-These are NOT in the repo — `.gitignore` excludes `data/` and `*.npz`, which is
-correct: they are cohort data. Copy them across once:
+**The repo is public**, so cohort data stays out of it (`.gitignore` excludes
+`data/` and `*.npz`). Copy these four into `ssl_gpu/data/` once:
 
 | file | size | what it is |
 |---|---|---|
-| `panel.npz` | 156 KB | the 977×25 tabular panel + fids + GA + BMI |
+| `image_clusters.csv` | 5.3 MB | manifest: new_filename -> fetus_id, dataset_type |
+| `panel.npz` | 156 KB | 977x25 tabular panel + fids + GA + BMI |
 | `frozen_usfm.npz` | 3.0 MB | per-fetus frozen USFM embedding — **the incumbent to beat** |
+| `clinical_fetal_gate.csv` | 2.8 MB | drops the ~5,142 non-fetal clinical frames (optional but recommended) |
 
 ```bash
-# from your laptop
-scp panel.npz frozen_usfm.npz USER@HOST:~/fgr-geometry/ssl_gpu/data/
+# from your laptop, one command
+scp image_clusters.csv panel.npz frozen_usfm.npz clinical_fetal_gate.csv \
+  tiago.fernandes@HOST:~/PyCharmProjects/fgr-geometry/ssl_gpu/data/
 ```
 
-Both are regenerable on any machine with the cohort mounted:
-`python build_inputs.py --out data`.
-
-You also need the **image manifest** (`image_clusters.csv`, ~9 MB, the
-new_filename → fetus_id map) in `data/`. If it is already on the HPC, symlink it
-rather than copying:
-
-```bash
-ln -s /path/on/hpc/to/image_clusters.csv data/image_clusters.csv
-```
-
-**The frames stay where they are** — you only point `--image-root` at them.
+`panel.npz` and `frozen_usfm.npz` are regenerable on any machine with the cohort
+mounted: `python build_inputs.py --out data`.
 
 ## 2. The two frame paths
 
@@ -71,7 +64,8 @@ training. The loader reports how many ids collide so you can see it working.
 burn GPU hours:**
 
 ```bash
-python check_paths.py --image-root $IMPACT --image-root-clinical $CLINICAL
+python check_paths.py --image-root $IMPACT --image-root-clinical $CLINICAL \
+  --keep-csv data/clinical_fetal_gate.csv
 ```
 
 It prints what resolved and exits non-zero if anything is wrong. Expect roughly
@@ -124,12 +118,14 @@ python -c "import torch;print('torch',torch.__version__,'cuda',torch.cuda.is_ava
 python run_ssl.py --arm mae --epochs 100 --batch 64 --amp --workers 8 \
   --manifest data/image_clusters.csv \
   --image-root $IMPACT --image-root-clinical $CLINICAL \
+  --keep-csv data/clinical_fetal_gate.csv \
   --panel data/panel.npz --out results 2>&1 | tee logs/mae.log
 
 # arm 2: contrastive, same-fetus positives -- BOTH cohorts  ~4-8 h
 python run_ssl.py --arm contrast --epochs 100 --batch 64 --amp --workers 8 \
   --manifest data/image_clusters.csv \
   --image-root $IMPACT --image-root-clinical $CLINICAL \
+  --keep-csv data/clinical_fetal_gate.csv \
   --panel data/panel.npz --out results 2>&1 | tee logs/contrast.log
 
 # arm 3: supervised, THE DECISIVE ONE -- IMPACT only (needs targets)
@@ -151,10 +147,10 @@ nohup python run_ssl.py --arm mae --epochs 100 --batch 64 --amp --workers 8 \
 tail -f logs/mae.log
 ```
 
-**Optional but recommended for the clinical set:** it contains ~15% non-fetal
-frames (transvaginal, gynaecological, Doppler traces). If `clinical_fetal_gate.csv`
-is on the HPC, pass `--keep-csv data/clinical_fetal_gate.csv` to drop them —
-otherwise the encoder spends capacity on anatomy that is not the fetus.
+`--keep-csv` drops the 5,142 clinical frames the fetal gate rejected
+(transvaginal, gynaecological, Doppler traces — ~10% of the clinical set),
+leaving 46,956. Without it the encoder spends capacity on anatomy that is not
+the fetus.
 
 ## 5. Score — CPU, ~10 minutes, run after all three finish
 
