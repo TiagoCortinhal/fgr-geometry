@@ -907,3 +907,78 @@ def fgm_image_pcs_by_plane(fids, n_pc=4, layer="emb_l5", planes=None,
         out[p] = (arr - np.nanmean(arr, 0)) / np.nanstd(arr, 0)
         counts[p] = dict(frames=int(m.sum()), fetuses=int(pf.shape[0]))
     return out, counts
+
+
+RADIOMICS_VID = "f132472f-c3bd-4131-bb56-058a6a57999f"
+
+
+def fgm_radiomics(fids, n_pc=12, per_plane=False, use_labelled=True,
+                  planes=None, artifact_path_fn=None):
+    """PyRadiomics texture features -- an ENCODER-INDEPENDENT image representation.
+
+    226 columns in the stored parquet, but only the genuine radiomics families
+    count: firstorder / glcm / glrlm / glszm (plus their wavelet-L variants).
+    The file also carries metadata columns (ga_weeks*, plane_conf, *_id, *_date)
+    that share the underscore naming and MUST be excluded -- ga_weeks in
+    particular would inject the gestational-age channel straight into the
+    "image" block and manufacture a cross-modal correlation.
+
+    Computed from raw pixels with no neural network, so agreement with USFM
+    means an image null is encoder-general rather than a USFM artefact.
+
+    Returns (array aligned to fids, list of feature names) or, with
+    per_plane=True, (dict plane -> array, dict plane -> counts).
+    """
+    import re
+    import numpy as np
+    import pandas as pd
+    from sklearn.decomposition import PCA
+    if planes is None:
+        planes = ["cerebral", "abdominal", "femur"]
+    getp = artifact_path_fn
+    if getp is None:
+        import host as _h
+        getp = _h.artifact_path
+    rad = pd.read_parquet(getp(RADIOMICS_VID))
+    fam = re.compile(r"(firstorder|glcm|glrlm|glszm)", re.I)
+    meta = re.compile(r"ga_weeks|plane_conf|_id$|^id|date|in_cohort|dataset", re.I)
+    feat = [c for c in rad.columns
+            if fam.search(str(c)) and not meta.search(str(c))
+            and rad[c].dtype.kind in "ifc"]
+    rad["fid"] = rad["name"].astype(str).str.extract(r"IMP0*(\d+)_")[0].astype(float)
+    rad["key"] = rad["name"].astype(str).str.replace(r"\.png$", "", regex=True)
+    if per_plane:
+        man = pd.read_csv(MANIFEST_CSV)
+        man["key"] = man.new_filename.astype(str).str.replace(r"\.png$", "", regex=True)
+        col = "plane" if use_labelled else "plane_prop"
+        rad = rad.merge(man[["key", col]], on="key", how="left", suffixes=("", "_m"))
+        pcol = col if col in rad.columns else col + "_m"
+        out, counts = {}, {}
+        for p in planes:
+            sub = rad[(rad[pcol] == p) & np.isfinite(rad.fid)]
+            X = sub[feat].to_numpy(dtype=float)
+            ok = np.isfinite(X).all(1)
+            if ok.sum() < 50:
+                continue
+            df = pd.DataFrame(X[ok])
+            df["fid"] = sub.fid.to_numpy()[ok].astype(int)
+            pf = df.groupby("fid").mean()
+            V = (pf.values - pf.values.mean(0)) / (pf.values.std(0) + 1e-9)
+            k = min(n_pc, V.shape[0] - 1, V.shape[1])
+            S = PCA(k, random_state=0).fit_transform(V)
+            d = dict(zip([int(x) for x in pf.index], S))
+            arr = np.array([d.get(int(f), [np.nan] * k) for f in fids])
+            out[p] = (arr - np.nanmean(arr, 0)) / np.nanstd(arr, 0)
+            counts[p] = dict(frames=int(ok.sum()), fetuses=int(pf.shape[0]))
+        return out, counts
+    sub = rad[np.isfinite(rad.fid)]
+    X = sub[feat].to_numpy(dtype=float)
+    ok = np.isfinite(X).all(1)
+    df = pd.DataFrame(X[ok])
+    df["fid"] = sub.fid.to_numpy()[ok].astype(int)
+    pf = df.groupby("fid").mean()
+    V = (pf.values - pf.values.mean(0)) / (pf.values.std(0) + 1e-9)
+    S = PCA(min(n_pc, V.shape[0] - 1, V.shape[1]), random_state=0).fit_transform(V)
+    d = dict(zip([int(x) for x in pf.index], S))
+    arr = np.array([d.get(int(f), [np.nan] * S.shape[1]) for f in fids])
+    return (arr - np.nanmean(arr, 0)) / np.nanstd(arr, 0), feat
