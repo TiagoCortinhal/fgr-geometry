@@ -138,6 +138,9 @@ def embed_all(enc, byf, fids, size, device, batch=128):
 def main():
     a = get_args()
     os.makedirs(a.out, exist_ok=True)
+    # Helps only when the script writes its own files. It does NOT rescue a
+    # shell pipeline `... | tee logs/x.log`: the shell opens the log before
+    # python starts, so logs/ must already exist. RUN.md says `mkdir -p logs`.
     os.makedirs("logs", exist_ok=True)
     if a.workers < 0:
         try:

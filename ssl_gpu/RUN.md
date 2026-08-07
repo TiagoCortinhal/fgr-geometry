@@ -5,7 +5,7 @@
 ```bash
 git clone https://github.com/TiagoCortinhal/fgr-geometry.git
 cd fgr-geometry/ssl_gpu
-mkdir -p data results logs
+mkdir -p data results logs      # logs/ MUST exist before any `| tee logs/...`
 ```
 
 (Already cloned? `git pull` — the package is under `ssl_gpu/`.)
@@ -164,8 +164,11 @@ believe it; that warning can cost a GPU job hours.
 
 Override only if you know better: `--workers 2`.
 
-`logs/` is created automatically now, so `| tee logs/x.log` works from a fresh
-clone.
+**`mkdir -p logs results` before any command that pipes to `tee`.** The shell
+starts `tee` at the same moment as python, so `tee` opens `logs/x.log` long
+before python could create the directory -- a `makedirs` inside the script does
+NOT save you here. Step 0 already creates both; if you cloned fresh, run it
+again.
 
 ## 3. Environment
 
@@ -178,6 +181,8 @@ python -c "import torch;print('torch',torch.__version__,'cuda',torch.cuda.is_ava
 ## 4. Train — three commands, run them one at a time
 
 ```bash
+mkdir -p logs results           # no-op if they exist; tee needs logs/ NOW
+
 # arm 1: masked autoencoder -- pretrains on BOTH cohorts    ~4-8 h
 python run_ssl.py --arm mae --epochs 100 --batch 64 --amp --workers 8 \
   --manifest data/image_clusters.csv \
