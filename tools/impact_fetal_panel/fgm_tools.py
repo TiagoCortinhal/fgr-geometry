@@ -739,3 +739,108 @@ def fgm_nuisance_design(GA, EFW, BIO):
     e = np.where(np.isfinite(EFW), EFW, 0.0).reshape(n, 1)
     b = np.where(np.isfinite(BIO), BIO, 0.0).reshape(n, -1)
     return np.column_stack([np.ones(n), g, e, b])
+
+
+def fgm_visit_deviations(measures=None, min_visits=3, repo=None):
+    """Per-visit deviation from each fetus's OWN smooth growth curve.
+
+    A fetus cannot leave its own trajectory and rejoin it, so the deviation of a
+    visit from a curve fitted through that fetus's other visits approximates
+    MEASUREMENT ERROR rather than biology. This is the cleanest reliability
+    target available in a cohort with no repeated measurements per visit.
+
+    Leave-one-visit-out: the curve for visit t is fitted WITHOUT visit t, so the
+    deviation is out-of-sample. Requires min_visits >= 3 (a 2-visit fetus has no
+    curve to leave out against).
+
+    Returns a DataFrame: fid, visit, ga_weeks, measure, value, fitted, deviation.
+    """
+    import numpy as np
+    import pandas as pd
+    if measures is None:
+        measures = ["ac_z_ig21", "hc_z_ig21", "bpd_z_ig21", "fl_z_ig21"]
+    fgm_setup(repo)
+    v = pd.read_csv("data/visits_long_z.csv")
+    v["fid"] = pd.to_numeric(v.fetus_id, errors="coerce")
+    rows = []
+    for fid, g in v.groupby("fid"):
+        g = g.sort_values("ga_weeks")
+        for meas in measures:
+            sub = g[np.isfinite(g[meas]) & np.isfinite(g.ga_weeks)]
+            if len(sub) < min_visits:
+                continue
+            ga = sub.ga_weeks.to_numpy(float)
+            y = sub[meas].to_numpy(float)
+            for i in range(len(sub)):
+                keep = np.arange(len(sub)) != i
+                deg = 1 if keep.sum() < 4 else 2
+                c = np.polyfit(ga[keep], y[keep], deg)
+                fit = float(np.polyval(c, ga[i]))
+                rows.append(dict(fid=int(fid), visit=str(sub.visit.iloc[i]),
+                                 ga_weeks=float(ga[i]), measure=meas,
+                                 value=float(y[i]), fitted=fit,
+                                 deviation=float(y[i] - fit)))
+    return pd.DataFrame(rows)
+
+
+def fgm_precision_test(dev_df, IMG, fids, GA, BMI=None, nperm=400, seed=0):
+    """Do images predict per-fetus MEASUREMENT NOISE (not measurement value)?
+
+    dev_df: output of fgm_visit_deviations. Target is the per-fetus RMS deviation
+    across visits and measures -- a scalar noise level per fetus.
+
+    Reports the image->noise correlation adjusted for GA, then additionally for
+    BMI. The BMI rung is the one that matters: maternal habitus sets ultrasound
+    penetration, so images beating BMI is the only way this adds anything.
+    Also returns the DIRECTION check -- predicted noise must rise with BMI.
+    """
+    import numpy as np
+    from sklearn.decomposition import PCA
+    from sklearn.linear_model import RidgeCV
+    from sklearn.model_selection import KFold
+    from scipy.stats import pearsonr
+    rms = dev_df.groupby("fid").deviation.apply(lambda s: float(np.sqrt((s ** 2).mean())))
+    y = np.array([rms.get(int(f), np.nan) for f in fids])
+    y = np.log1p(y)
+
+    def _oof(target, COV, seed=seed):
+        m = np.isfinite(target) & np.isfinite(IMG).all(1) & np.isfinite(COV).all(1)
+        if m.sum() < 100:
+            return float("nan"), int(m.sum()), None
+        A = COV[m]
+        yy = target[m] - A @ np.linalg.lstsq(A, target[m], rcond=None)[0]
+        Xs = IMG[m] - A @ np.linalg.lstsq(A, IMG[m], rcond=None)[0]
+        p = np.zeros_like(yy)
+        for tr, te in KFold(5, shuffle=True, random_state=seed).split(Xs):
+            pc = PCA(min(10, Xs.shape[1], len(tr) - 1), random_state=0).fit(Xs[tr])
+            p[te] = RidgeCV(alphas=np.logspace(-2, 3, 20)).fit(
+                pc.transform(Xs[tr]), yy[tr]).predict(pc.transform(Xs[te]))
+        return float(np.corrcoef(p, yy)[0, 1]), int(m.sum()), (m, p)
+
+    n = len(y)
+    g = np.where(np.isfinite(GA), GA, np.nanmean(GA)).reshape(n, 1)
+    COV1 = np.column_stack([np.ones(n), g])
+    r1, n1, aux = _oof(y, COV1)
+    out = dict(n_fetuses=int(np.isfinite(y).sum()), target="log1p(RMS visit deviation)",
+               r_adj_GA=r1, n_GA=n1)
+    if BMI is not None:
+        b = np.where(np.isfinite(BMI), BMI, 0.0).reshape(n, 1)
+        COV2 = np.column_stack([COV1, b])
+        r2, n2, aux2 = _oof(y, COV2)
+        out.update(r_adj_GA_BMI=r2, n_GA_BMI=n2)
+        mb = np.isfinite(y) & np.isfinite(BMI)
+        out["bmi_predicts_noise_r"] = float(pearsonr(BMI[mb], y[mb])[0])
+        if aux is not None:
+            m, p = aux
+            mm = np.isfinite(BMI[m])
+            out["direction_pred_noise_vs_BMI"] = float(pearsonr(p[mm], BMI[m][mm])[0])
+    if aux is not None:
+        m, p = aux
+        rng = np.random.default_rng(seed)
+        yy = y[m]
+        nl = []
+        for _ in range(nperm):
+            nl.append(float(np.corrcoef(rng.permutation(p), yy)[0, 1]))
+        out["null_p95"] = float(np.percentile(nl, 95))
+        out["p"] = float((1 + sum(x >= r1 for x in nl)) / (1 + len(nl)))
+    return out
