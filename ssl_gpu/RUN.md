@@ -84,6 +84,13 @@ python /path/to/fgr-geometry/ssl_gpu/check_paths.py \
   --frozen   /path/to/ssl_gpu/data/frozen_usfm.npz
 ```
 
+**Filenames:** the manifest stores stems without an extension
+(`IMP0324_20171030_1.2.276...`) while the frames on disk are `.png`. The loader
+probes a few extensions and reports which it resolved
+(`extension resolved: {'impact': '.png'}`). If nothing matches it prints the
+manifest's expected name next to what is actually in the directory, so you can
+see whether it is a suffix problem or the wrong directory.
+
 If the clinical PNGs are not under `preprocessed/`, try `inpainted/` — both
 cohorts have that directory too, and it was byte-identical to `preprocessed/`
 for IMPACT.
@@ -102,6 +109,39 @@ apptainer exec --nv \
 
 Bind-mount the data directory so the frames are visible inside the container,
 and export `IMPACT`/`CLINICAL` inside the shell (or pass them as flags).
+
+## 2c. Swapping the frozen encoder (optional)
+
+The incumbent normally comes from `data/frozen_usfm.npz`. To extract it online
+instead — so a different encoder is a flag rather than a regenerate-and-scp
+round trip:
+
+```bash
+export USFM_WEIGHTS=/path/on/hpc/to/USFM_latest.pth
+
+# reproduce the stored incumbent, and CHECK that it does
+python run_ssl.py --arm frozen --encoder usfm:5 \
+  --image-root $IMPACT --manifest data/image_clusters.csv \
+  --panel data/panel.npz --out results \
+  --verify-against data/frozen_usfm.npz
+
+# then any other encoder is one flag
+python run_ssl.py --arm frozen --encoder usfm:11 ...
+python run_ssl.py --arm frozen --encoder resnet50 ...
+```
+
+**Run the `--verify-against` check once before trusting a swap.** If `usfm:5`
+does not reproduce `frozen_usfm.npz`, the baseline has silently moved and every
+comparison in the project is against a different incumbent — the script warns
+loudly rather than continuing quietly.
+
+Adding an encoder is one entry in `ENCODERS` in `fgm_ssl/encoders.py`: a
+callable returning `(model, preprocess, dim)`. Pooling, evaluation and the stop
+rule are untouched, which is the point — only the representation varies.
+
+`usfm:*` needs USFM's `VisionTransformer` importable (put the USFM repo on
+`PYTHONPATH`); `resnet50` needs only torchvision and is a useful cheap check —
+it should reproduce the maternal-BMI confound and little else.
 
 ## 3. Environment
 

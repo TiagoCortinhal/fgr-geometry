@@ -46,6 +46,14 @@ def get_args():
     p.add_argument("--image-root-clinical", default=None,
                    help="clinical frames -- PRETRAINING ONLY (no tabular targets). "
                         "Used by mae/contrast; ignored by the supervised arm.")
+    p.add_argument("--encoder", default=None,
+                   help="frozen arm: extract features ONLINE with this encoder "
+                        "instead of reading a npz. e.g. usfm:5, usfm:11, resnet50")
+    p.add_argument("--usfm-weights", default=os.environ.get("USFM_WEIGHTS"),
+                   help="path to USFM_latest.pth (or $USFM_WEIGHTS)")
+    p.add_argument("--verify-against", default=None,
+                   help="npz to check an online encoder reproduces (e.g. "
+                        "data/frozen_usfm.npz -- run once after switching)")
     p.add_argument("--panel", default="data/panel.npz",
                    help="npz with Z (n,25), cols, blocks, fids, ga, bmi")
     p.add_argument("--keep-csv", default=None,
@@ -149,8 +157,41 @@ def main():
         f"-- check --image-root")
 
     if a.arm == "frozen":
-        print("[frozen] no training; score the existing USFM embeddings with "
-              "score_arms.py --arm frozen", flush=True)
+        if not a.encoder:
+            print("[frozen] no --encoder given; score the existing npz with "
+                  "score_arms.py --frozen data/frozen_usfm.npz", flush=True)
+            return
+        from fgm_ssl.encoders import build_encoder, embed_fetuses, verify_against_npz
+        model, prep, dim = build_encoder(a.encoder, dev, a.usfm_weights)
+        print(f"[frozen] online extraction with '{a.encoder}' (dim {dim}) over "
+              f"{len(have)} IMPACT fetuses", flush=True)
+        t0 = time.time()
+        emb = embed_fetuses(model, prep, byf, have, device=dev, batch=a.batch,
+                            size=a.size)
+        E = np.array([emb.get(int(f), np.full(dim, np.nan)) for f in fids],
+                     dtype="float32")
+        tag = a.encoder.replace(":", "")
+        # A frozen encoder never trains, so every fetus is scorable.
+        np.savez_compressed(os.path.join(a.out, f"frozen_{tag}_embeddings.npz"),
+                            E=E, fids=fids,
+                            heldout_fids=np.array([int(f) for f in have]),
+                            train_fids=np.array([], dtype=int))
+        log = dict(arm="frozen", encoder=a.encoder, dim=int(dim),
+                   n_fetuses=int(np.isfinite(E).all(1).sum()),
+                   minutes=round((time.time() - t0) / 60, 1))
+        if a.verify_against and os.path.exists(a.verify_against):
+            v = verify_against_npz(E, a.verify_against, fids)
+            log["verify"] = v
+            print(f"[verify] vs {os.path.basename(a.verify_against)}: {v}", flush=True)
+            if v.get("comparable") and not v.get("reproduces"):
+                print("[verify] WARNING: this encoder does NOT reproduce the stored "
+                      "incumbent. If you meant usfm:5, the baseline has moved and "
+                      "comparisons are no longer against the published numbers.",
+                      flush=True)
+        json.dump(log, open(os.path.join(a.out, f"frozen_{tag}_log.json"), "w"),
+                  indent=1)
+        print(f"[done] frozen/{a.encoder}: {log['n_fetuses']} fetuses | "
+              f"{log['minutes']} min", flush=True)
         return
 
     # The supervised arm SEES THE TARGET during training, so scoring it on its

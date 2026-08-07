@@ -60,11 +60,54 @@ class FrameManifest:
         return {str(d): dict(frames=int(len(g)), fetuses=int(g.fid.nunique()))
                 for d, g in self.df.groupby("dataset_type")}
 
-    def existing(self):
-        """Drop rows whose file is not on disk. Run once; it stats every path."""
+    EXTS = ("", ".png", ".jpg", ".jpeg", ".PNG", ".tif", ".tiff")
+
+    def existing(self, exts=None):
+        """Drop rows whose file is not on disk, resolving the extension.
+
+        The manifest stores `new_filename` WITHOUT an extension
+        (`IMP0324_20171030_1.2.276...`) while the frames on disk are `.png`.
+        Joining the bare name resolves nothing, so we probe a small set of
+        extensions, decide the winner from a sample, then apply it to all rows
+        (one stat per row rather than len(EXTS) stats per row).
+        """
+        exts = list(exts or self.EXTS)
+        if len(self.df) == 0:
+            return self
+        # decide the extension per dataset_type from a sample
+        chosen = {}
+        for ds, g in self.df.groupby("dataset_type"):
+            sample = g.path.head(40).tolist()
+            best, hits = "", 0
+            for e in exts:
+                h = sum(os.path.exists(p + e) for p in sample)
+                if h > hits:
+                    best, hits = e, h
+                if hits == len(sample):
+                    break
+            chosen[str(ds)] = best
+        self.resolved_ext = chosen
+        self.df = self.df.copy()
+        self.df["path"] = [p + chosen.get(str(d), "")
+                           for p, d in zip(self.df.path, self.df.dataset_type)]
         keep = [os.path.exists(p) for p in self.df.path]
         self.df = self.df[np.array(keep)].reset_index(drop=True)
         return self
+
+    def diagnose(self, n=3):
+        """When nothing resolves: what does the manifest expect vs what is there?"""
+        out = {}
+        for ds, g in self.df.groupby("dataset_type"):
+            root = os.path.dirname(g.path.iloc[0])
+            try:
+                on_disk = sorted(os.listdir(root))[:n]
+            except OSError as e:
+                on_disk = [f"<cannot list: {e}>"]
+            out[str(ds)] = dict(root=root,
+                                manifest_expects=[os.path.basename(p)
+                                                  for p in g.path.head(n)],
+                                found_on_disk=on_disk)
+        return out
 
     def by_fetus(self, namespaced=False):
         """fetus key -> paths.

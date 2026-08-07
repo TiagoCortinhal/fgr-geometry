@@ -59,12 +59,23 @@ def main():
 
     ev = FrameManifest(a.manifest, roots, ["impact"], a.keep_csv)
     n_listed = len(ev.df)
+    diag = ev.diagnose()          # capture BEFORE existing() filters rows away
     ev.existing()
     print(f"[eval] IMPACT: {n_listed} rows in manifest -> {len(ev.df)} files found on disk")
-    print(f"       {ev.counts()}")
+    print(f"       {ev.counts()}  | extension resolved: {ev.resolved_ext}")
     if len(ev.df) == 0:
-        problems.append("no IMPACT files resolved -- --image-root points at the wrong "
-                        "directory, or the PNGs sit one level deeper")
+        problems.append("no IMPACT files resolved")
+        print("\n  --- why nothing matched ---")
+        for ds, d in diag.items():
+            print(f"  [{ds}] root: {d['root']}")
+            for x in d["manifest_expects"]:
+                print(f"      manifest expects: {x}")
+            for x in d["found_on_disk"]:
+                print(f"      actually on disk: {x}")
+        print("  Compare the two: if the stems match but the suffix differs, the "
+              "extension probe missed it -- tell me the real suffix. If the stems "
+              "differ, --image-root is the wrong directory (try inpainted/ or "
+              "cropped/, or a level deeper).")
     elif len(ev.df) < 0.5 * n_listed:
         problems.append(f"only {len(ev.df)}/{n_listed} IMPACT files resolved -- "
                         f"partial path mismatch")
