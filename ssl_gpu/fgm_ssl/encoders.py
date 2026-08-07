@@ -21,6 +21,7 @@ you to run it once before trusting a swapped encoder.
 from __future__ import annotations
 
 import os
+import sys
 
 import numpy as np
 import torch
@@ -49,23 +50,52 @@ def _usfm_preprocess(a):
     return (x - m) / s
 
 
-def load_usfm(weights, layer=5, device="cpu"):
+USFM_IMPORTS = [
+    ("usdsgen.modules.backbone.vision_transformer", "VisionTransformer"),
+    ("USFM.usdsgen.modules.backbone.vision_transformer", "VisionTransformer"),
+    ("usfm.models.vision_transformer", "VisionTransformer"),
+]
+
+
+def _import_usfm_vit(repo=None):
+    """Import USFM's own VisionTransformer.
+
+    NO FALLBACK TO A SIMILAR-LOOKING CLASS. An earlier version fell back to
+    timm's Beit, which has a different signature and — worse, had it accepted
+    the arguments — would have built a DIFFERENT architecture and produced
+    features silently unlike the stored incumbent. If USFM is not importable,
+    that is a setup problem to fix, not something to paper over.
+    """
+    import importlib
+    if repo:
+        for cand in (repo, os.path.join(repo, "USFM-master"), os.path.dirname(repo)):
+            if cand and os.path.isdir(cand) and cand not in sys.path:
+                sys.path.insert(0, cand)
+    tried = []
+    for mod, cls in USFM_IMPORTS:
+        try:
+            return getattr(importlib.import_module(mod), cls)
+        except Exception as e:                       # noqa: BLE001
+            tried.append(f"{mod}: {type(e).__name__}")
+    raise SystemExit(
+        "Could not import USFM's VisionTransformer.\n"
+        + "\n".join("  tried " + t for t in tried)
+        + "\n\nThe real module is `usdsgen.modules.backbone.vision_transformer`,"
+          " which lives in the USFM source tree. Point at it with:\n"
+          "    --usfm-repo /path/to/USFM-master        (or $USFM_REPO)\n"
+          "or  export PYTHONPATH=/path/to/USFM-master:$PYTHONPATH\n\n"
+          "Do NOT substitute another ViT: it would produce features that are not"
+          " USFM and would silently move the incumbent baseline.")
+
+
+def load_usfm(weights, layer=5, device="cpu", repo=None):
     """USFM ViT-B/16 with a forward hook on `layer`, mean over patch tokens.
 
     Reproduces the stored extraction exactly: out[:, 1:, :].mean(1) — patch
     tokens only, CLS dropped. `strict=False` mirrors the original load.
     """
     from functools import partial
-    try:
-        from usfm.models.vision_transformer import VisionTransformer
-    except ImportError:
-        try:
-            from timm.models.beit import Beit as VisionTransformer  # fallback
-        except ImportError as e:
-            raise ImportError(
-                "USFM's VisionTransformer is not importable. Put the USFM repo "
-                "on PYTHONPATH, or use --encoder resnet50 for a quick check."
-            ) from e
+    VisionTransformer = _import_usfm_vit(repo)
     model = VisionTransformer(
         img_size=224, patch_size=16, in_chans=3, num_classes=0, embed_dim=768,
         depth=12, num_heads=12, mlp_ratio=4, qkv_bias=True, drop_path_rate=0.0,
@@ -118,20 +148,22 @@ def load_resnet50(device="cpu", pretrained=True):
 
 
 ENCODERS = {
-    "usfm": lambda spec, device, weights: load_usfm(
-        weights, layer=int(spec) if spec else 5, device=device),
-    "resnet50": lambda spec, device, weights: load_resnet50(device=device),
+    "usfm": lambda spec, device, weights, repo: load_usfm(
+        weights, layer=int(spec) if spec else 5, device=device, repo=repo),
+    "resnet50": lambda spec, device, weights, repo: load_resnet50(device=device),
 }
 
 
-def build_encoder(name, device="cpu", weights=None):
+def build_encoder(name, device="cpu", weights=None, repo=None):
     """name is 'family' or 'family:spec', e.g. 'usfm:11'."""
     fam, _, spec = name.partition(":")
     if fam not in ENCODERS:
         raise SystemExit(f"unknown encoder '{fam}'. Available: {sorted(ENCODERS)}")
     if fam == "usfm" and not (weights and os.path.exists(weights)):
-        raise SystemExit(f"--usfm-weights not found: {weights}")
-    return ENCODERS[fam](spec, device, weights)
+        raise SystemExit(
+            f"USFM weights not found: {weights}\n"
+            f"    --usfm-weights /path/to/USFM_latest.pth   (or $USFM_WEIGHTS)")
+    return ENCODERS[fam](spec, device, weights, repo)
 
 
 @torch.no_grad()

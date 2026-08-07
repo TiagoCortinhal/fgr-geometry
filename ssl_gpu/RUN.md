@@ -118,6 +118,7 @@ round trip:
 
 ```bash
 export USFM_WEIGHTS=/path/on/hpc/to/USFM_latest.pth
+export USFM_REPO=/path/on/hpc/to/USFM          # the source tree, not the weights
 
 # reproduce the stored incumbent, and CHECK that it does
 python run_ssl.py --arm frozen --encoder usfm:5 \
@@ -139,9 +140,19 @@ Adding an encoder is one entry in `ENCODERS` in `fgm_ssl/encoders.py`: a
 callable returning `(model, preprocess, dim)`. Pooling, evaluation and the stop
 rule are untouched, which is the point — only the representation varies.
 
-`usfm:*` needs USFM's `VisionTransformer` importable (put the USFM repo on
-`PYTHONPATH`); `resnet50` needs only torchvision and is a useful cheap check —
-it should reproduce the maternal-BMI confound and little else.
+`usfm:*` imports `usdsgen.modules.backbone.vision_transformer` from the USFM
+source tree — point `--usfm-repo` (or `$USFM_REPO`) at it, or put it on
+`PYTHONPATH`. Locally that tree is `/Users/tiago/dev/USFM`, so on the HPC look
+for the directory containing `usdsgen/`.
+
+**There is deliberately no fallback to a similar ViT.** An earlier version fell
+back to timm's Beit, which failed loudly on a signature mismatch — and had it
+*not* failed, it would have built a different architecture and produced features
+silently unlike the incumbent. If the import fails, the script tells you what it
+tried and stops.
+
+`resnet50` needs only torchvision and is a useful cheap check — it should
+reproduce the maternal-BMI confound and little else.
 
 ## 3. Environment
 

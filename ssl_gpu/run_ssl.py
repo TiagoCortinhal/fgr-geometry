@@ -51,6 +51,9 @@ def get_args():
                         "instead of reading a npz. e.g. usfm:5, usfm:11, resnet50")
     p.add_argument("--usfm-weights", default=os.environ.get("USFM_WEIGHTS"),
                    help="path to USFM_latest.pth (or $USFM_WEIGHTS)")
+    p.add_argument("--usfm-repo", default=os.environ.get("USFM_REPO"),
+                   help="path to the USFM source tree providing "
+                        "usdsgen.modules.backbone.vision_transformer (or $USFM_REPO)")
     p.add_argument("--verify-against", default=None,
                    help="npz to check an online encoder reproduces (e.g. "
                         "data/frozen_usfm.npz -- run once after switching)")
@@ -162,7 +165,7 @@ def main():
                   "score_arms.py --frozen data/frozen_usfm.npz", flush=True)
             return
         from fgm_ssl.encoders import build_encoder, embed_fetuses, verify_against_npz
-        model, prep, dim = build_encoder(a.encoder, dev, a.usfm_weights)
+        model, prep, dim = build_encoder(a.encoder, dev, a.usfm_weights, a.usfm_repo)
         print(f"[frozen] online extraction with '{a.encoder}' (dim {dim}) over "
               f"{len(have)} IMPACT fetuses", flush=True)
         t0 = time.time()
