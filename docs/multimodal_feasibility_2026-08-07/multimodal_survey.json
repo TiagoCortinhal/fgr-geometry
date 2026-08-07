@@ -290,8 +290,17 @@
   },
   "FINDING_3_blocks": {
     "growth": {
-      "adjusted": -0.179,
-      "p": 1.0
+      "INVALID_original": {
+        "adjusted": -0.179,
+        "p": 1.0,
+        "reason": "target residualised on itself"
+      },
+      "corrected": {
+        "adjusted": 0.15904122839223228,
+        "p": 0.0024937655860349127,
+        "n": 905,
+        "note": "positive, but measurement recovery: biometry is measured from these images"
+      }
     },
     "maternal": {
       "adjusted": 0.384,
@@ -314,12 +323,27 @@
     },
     "reading": "only maternal clears its null decisively, and maternal is the confound"
   },
-  "ANSWER": "On this cohort there is NO clinically meaningful multimodal signal between the images and the tabular registry. Of 477 variables the median adjusted correlation is -0.005 and only 7.3% exceed 0.15. Every hit that clears a null decomposes into two acquisition properties -- maternal body habitus (which sets image quality) and, weakly, fetal presentation and echo quality grading. Once BMI is removed from the image representation, nothing survives.",
+  "ANSWER": "Of 477 registry variables the median adjusted correlation is -0.005 and only 7.3% exceed 0.15. Two things clear their nulls. (1) MATERNAL BODY HABITUS (BMI 0.493, ten near-duplicate encodings) -- an ACQUISITION confound: higher BMI degrades ultrasound penetration, and residualising images on BMI collapses the maternal block from +0.384 to -0.014. (2) FETAL BIOMETRY (+0.159 after GA and BMI, p=0.0025) -- but biometry is measured by a sonographer FROM these images, so this is measurement recovery, not cross-modal information. Everything else -- Doppler -0.040, cardiac 0.093, and the best non-habitus registry hit (blood pressure, 0.215 -> 0.037 once BMI enters) -- is null. There is no clinically meaningful multimodal signal in the sense of one modality carrying information another lacks.",
   "WHAT_THIS_IS_WORTH": "this is a real and reportable negative result, and it is stronger than the earlier block-level nulls because it is exhaustive rather than selective: not 'we tried five methods' but 'we tested every tabular variable in the registry individually'. It also identifies WHAT the frozen encoder does encode -- acquisition conditions -- which is a useful caution for anyone applying foundation-model embeddings to clinical ultrasound.",
   "caveats": [
     "screen is univariate per variable; a multivariate combination could in principle carry signal none of the parts do, though the block-level arm tested exactly that and found only maternal",
     "no BH correction applied to the screen itself -- it is used as a ranking, and every candidate was then tested individually with permutation nulls, which is the safer order",
     "pooled per-fetus image representation; a plane-specific or region-specific representation is untested",
-    "477 of 1013 numeric columns survive the coverage and level filters; low-coverage variables are unrepresented"
-  ]
+    "477 of 1013 numeric columns survive the coverage and level filters; low-coverage variables are unrepresented",
+    "the growth arm was initially reported as a degenerate null (-0.179) because the covariate set was the target; corrected to +0.159 p=0.0025, and reinterpreted as measurement recovery"
+  ],
+  "CORRECTION_growth_arm": {
+    "defect": "the growth arm's '+biom' rung used the growth block ITSELF as the nuisance covariate set (BIOi = the growth indices; target = the same indices). The target was residualised on itself, so the residual is ~0 by construction and -0.179 / p=1.000 could not show signal regardless of the data.",
+    "valid_adjustment": "biometry cannot be a covariate for a biometry target, and EFW is itself a growth variable, so the only admissible nuisance terms are GA and maternal BMI (the acquisition confound)",
+    "corrected_ladder": {
+      "raw": 0.21173284631649664,
+      "GA": 0.21839008714414856,
+      "GA+maternal BMI": 0.15904122839223228
+    },
+    "n": 905,
+    "perm_p": 0.0024937655860349127,
+    "null_p95": 0.0770437742161828,
+    "THE_GROWTH_ARM_IS_POSITIVE": "raw +0.212 -> GA +0.218 -> GA+BMI +0.159, permutation p=0.0025 against a null p95 of 0.077. Images DO carry fetal-biometry information that survives both gestational age and the maternal-habitus confound. The invalid rung had inverted this to a null.",
+    "BUT_IT_IS_NOT_CROSS_MODAL_DISCOVERY": "the biometry z-scores are measured BY A SONOGRAPHER FROM THESE SAME ULTRASOUND IMAGES. Image-appearance predicting AC/HC/FL is measurement recovery -- the images contain the structures the measurements were taken from -- not evidence of a modality carrying information another lacks. It is a positive control for the pipeline (the encoder does see fetal anatomy) rather than a fusion finding."
+  }
 }

@@ -18,6 +18,15 @@ BMI enters.
 **What the frozen encoder encodes is acquisition condition** — maternal habitus
 sets ultrasound penetration and the embedding reads it off the pixels.
 
+*Correction (post-review):* the growth block was first reported as a null
+(-0.179) but that rung residualised the biometry target on the biometry block
+itself and was degenerate. Redone with valid adjustment (GA + maternal BMI only)
+it is **positive: +0.159, p=0.0025**. This does not change the conclusion — the
+biometry z-scores are measured by a sonographer from these same images, so
+image-appearance predicting AC/HC/FL is measurement recovery, and a useful
+positive control that the encoder sees fetal anatomy. It is not one modality
+carrying information another lacks.
+
 **2. The blocks are neither redundant nor synergistic.** O-information
 (target-free, no outcome required) puts the curated 4-block clinical panel at
 Omega = -0.014, inside its block-shuffle null, and the 5-block panel with images
